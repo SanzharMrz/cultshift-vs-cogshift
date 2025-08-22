@@ -53,7 +53,15 @@ def refusal_score(text: str) -> float:
     return 0.0
 
 
-def logprob_string(model, tok, prompt: str, target: str, allowed_ids: Optional[Set[int]] = None) -> float:
+def _format_chat(tok, user_text: str) -> str:
+    msgs = [{"role": "user", "content": user_text}]
+    try:
+        return tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
+    except Exception:
+        return user_text
+
+
+def logprob_string(model, tok, prompt: str, target: str, allowed_ids: Optional[Set[int]] = None, use_chat_template: bool = True) -> float:
     """Compute log P(target | prompt) by summing token logprobs over the target string.
 
     If allowed_ids is provided, logits are masked to the shared set.
@@ -61,7 +69,8 @@ def logprob_string(model, tok, prompt: str, target: str, allowed_ids: Optional[S
     device = next(model.parameters()).device
     model.eval()
     with torch.no_grad():
-        enc_prompt = tok(prompt, return_tensors="pt", add_special_tokens=False).to(device)
+        full_prompt = _format_chat(tok, prompt) if use_chat_template else prompt
+        enc_prompt = tok(full_prompt, return_tensors="pt", add_special_tokens=False).to(device)
         enc_target = tok(target, return_tensors="pt", add_special_tokens=False).to(device)
 
         # Concatenate prompt + target; compute next-token logits across the whole sequence

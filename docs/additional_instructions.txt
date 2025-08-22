@@ -1,0 +1,460 @@
+# A) Cursor TODO Pack (with function sketches + locked defaults)
+
+Use this as your “engineering spec”. I’ve included our **final defaults** from earlier so you don’t have to re-decide mid-week.
+
+## A0. Repo layout (create these files)
+
+```
+mechdiff/
+  config.py
+  pairs/
+    pair_cultural.py
+    pair_cognitive.py
+  data/
+    prompts_freeform_en.jsonl
+    prompts_freeform_kk.jsonl
+  utils/
+    io.py
+    tokenizers.py
+    fairness.py
+    hooks.py
+    activations.py
+    cka.py
+    clt.py
+    steering.py
+    patching.py
+    attribution.py
+    metrics.py
+    plotting.py
+  notebooks/
+    R1_baseline.ipynb
+    R2_clt.ipynb
+    R3_causal.ipynb
+    R4_churn.ipynb
+  README.md
+```
+
+## A1. Locked Defaults (for week 1)
+
+```python
+# config.py
+DEFAULTS = dict(
+    # Models
+    base_id           = "meta-llama/Llama-3.1-8B-Instruct",
+    cultural_id       = "inceptionai/Llama-3.1-Sherkala-8B-Chat",
+    cognitive_id      = "nvidia/OpenMath2-Llama3.1-8B",  # math-specialized
+    # Fairness
+    enforce_shared_vocab = True,
+    mask_logits          = True,
+    post_embedding_only  = True,
+    # Data sizes / splits
+    n_freeform_cultural  = 40,     # EN or KK
+    n_gsm8k              = 300,    # sample
+    n_math               = 100,    # sample
+    # RQ1 representation metrics
+    rep_metrics          = ["CKA"], # keep simple; add "PWCCA" only if needed
+    layer_stride         = 2,       # evaluate every 2 layers
+    # RQ2 CLT
+    clt_tokens_per_layer = 8000,    # ~8-10k token positions
+    clt_val_frac         = 0.2,
+    # RQ3 steering
+    k_sweep              = [1,2,3,4,6,8],
+    alpha_grid           = [0.5,1.0,2.0,3.0],
+    side_effect_eps_pp   = 5.0,     # ≤5 pp neutral drop
+    side_effect_eps_ppl  = 0.05,    # ≤5% perplexity increase
+    # RQ4 churn thresholds
+    head_z_threshold     = 2.0,
+    head_abs_delta_nat   = 0.5,     # math
+    head_abs_delta_pp    = 5.0,     # cultural refusal
+    # Layers (fallback if you skip scanning)
+    fallback_layers      = [22,26],
+    seed                 = 17,
+)
+```
+
+## A2. Pair configs (swap to re-run the whole pipeline)
+
+```python
+# pairs/pair_cultural.py
+PAIR = dict(
+    name         = "cultural",
+    base_id      = "meta-llama/Llama-3.1-8B-Instruct",
+    tuned_id     = "inceptionai/Llama-3.1-Sherkala-8B-Chat",
+    # datasets: either KK MC or EN basket; choose one
+    datasets     = dict(
+        kk_mc_hf_id   = "kz-transformers/kk-socio-cultural-bench-mc",
+        freeform_file = "data/prompts_freeform_kk.jsonl",  # or _en.jsonl
+    ),
+    domain       = "cultural",
+    tokenizer_policy = "shared_vocab_required",
+)
+
+# pairs/pair_cognitive.py
+PAIR = dict(
+    name         = "cognitive",
+    base_id      = "meta-llama/Llama-3.1-8B-Instruct",
+    tuned_id     = "nvidia/OpenMath2-Llama3.1-8B",
+    datasets     = dict(
+        gsm8k        = "openai/gsm8k",
+        math         = "hendrycks/competition_math",
+    ),
+    domain       = "cognitive",
+    tokenizer_policy = "shared_vocab_recommended",  # same tokenizer; still keep fairness on
+)
+```
+
+## A3. Utilities — function sketches
+
+### Tokenizers & Fairness
+
+```python
+# utils/tokenizers.py
+from transformers import AutoTokenizer
+
+def load_tokenizers(base_id: str, tuned_id: str):
+    """Load slow tokenizers for deterministic behavior."""
+    tb = AutoTokenizer.from_pretrained(base_id, use_fast=False)
+    tt = AutoTokenizer.from_pretrained(tuned_id, use_fast=False)
+    return tb, tt
+
+def shared_vocab_maps(tok_base, tok_tuned):
+    """Return shared token strings, id maps, and allowed id sets per tokenizer."""
+    vb, vt = tok_base.get_vocab(), tok_tuned.get_vocab()
+    shared = set(vb.keys()) & set(vt.keys())
+    ids_b  = {vb[s]: s for s in shared}
+    ids_t  = {vt[s]: s for s in shared}
+    allowed_b, allowed_t = set(ids_b.keys()), set(ids_t.keys())
+    return shared, ids_b, ids_t, allowed_b, allowed_t
+
+# utils/fairness.py
+import torch
+
+def uses_only_shared(text: str, tok, shared: set) -> bool:
+    inv = {i:s for s,i in tok.get_vocab().items()}
+    ids = tok(text, add_special_tokens=False).input_ids
+    return all(inv[i] in shared for i in ids)
+
+def filter_shared(prompts, tok_base, tok_tuned, shared: set):
+    return [p for p in prompts if uses_only_shared(p, tok_base, shared) and uses_only_shared(p, tok_tuned, shared)]
+
+def mask_logits_to_allowed(logits: torch.Tensor, allowed_ids: set) -> torch.Tensor:
+    """(B, V) -> (B, V) masking out-of-shared to -inf."""
+    mask = torch.full_like(logits, float("-inf"))
+    idx = torch.tensor(sorted(list(allowed_ids)), device=logits.device)
+    return mask.index_copy(1, idx, logits.index_select(1, idx))
+```
+
+### Hooks & Activations
+
+```python
+# utils/hooks.py
+import torch
+from contextlib import contextmanager
+
+def get_blocks(model):
+    return model.model.layers  # Llama arch
+
+class LayerActCache:
+    """Caches residual after a given block index."""
+    def __init__(self, block):
+        self.acts = []
+        self.hook = block.register_forward_hook(self._hook)
+    def _hook(self, module, inputs, output):
+        self.acts.append(output.detach())
+    def close(self): self.hook.remove()
+
+@contextmanager
+def cache_layer(model, layer_idx: int):
+    cache = LayerActCache(get_blocks(model)[layer_idx])
+    yield cache
+    cache.close()
+```
+
+```python
+# utils/activations.py
+import torch
+
+def collect_last_token_resids(model, tok, texts, layer_idx: int, device="cuda"):
+    """Return (N, d_model) residuals at layer_idx for the last token per text."""
+    model.eval()
+    feats = []
+    with torch.no_grad():
+        for t in texts:
+            enc = tok(t, return_tensors="pt").to(device)
+            with cache_layer(model, layer_idx) as c:
+                _ = model(**enc)
+            h = c.acts[-1][:, -1, :]  # last token
+            feats.append(h.float().cpu())
+    return torch.cat(feats, dim=0)  # (N, d)
+```
+
+### Representation similarity (CKA)
+
+```python
+# utils/cka.py
+import torch
+
+def linear_cka(X: torch.Tensor, Y: torch.Tensor) -> float:
+    """X, Y: (N, d) zero-mean."""
+    Xc = X - X.mean(0, keepdim=True); Yc = Y - Y.mean(0, keepdim=True)
+    K = (Xc @ Xc.T); L = (Yc @ Yc.T)
+    HSIC = (K*L).sum()
+    norm = torch.sqrt((K*K).sum() * (L*L).sum() + 1e-8)
+    return (HSIC / norm).item()
+```
+
+### CLT (ridge)
+
+```python
+# utils/clt.py
+import torch
+
+def standardize(X):
+    mu = X.mean(0, keepdim=True); sd = X.std(0, keepdim=True) + 1e-6
+    return (X-mu)/sd, (mu, sd)
+
+def fit_ridge(X, Y, lam=1e-2):
+    """Solve (X^T X + lam I)W = X^T Y; returns W (d_x, d_y)."""
+    XtX = X.T @ X
+    d = XtX.shape[0]
+    W = torch.linalg.solve(XtX + lam*torch.eye(d), X.T @ Y)
+    return W
+
+def map_states(X, W, mu_sd_src=None, mu_sd_dst=None):
+    """Optionally un/standardize around mapping for patching with mapped states."""
+    H = X @ W
+    return H
+```
+
+### Steering / Ablation (rank-k projector)
+
+```python
+# utils/steering.py
+import torch
+
+def difference_in_means(A, B):
+    """A,B: (Na,d),(Nb,d) -> unit direction."""
+    d = (A.mean(0) - B.mean(0))
+    return d / (d.norm() + 1e-8)
+
+def svd_around_direction(A, d, k=4):
+    """Return U_k: (d,k) orthonormal; start from A's covariance."""
+    U, S, Vt = torch.linalg.svd(A - A.mean(0), full_matrices=False)
+    U_k = U[:, :k]  # (d,k) if you SVD covariance; or build Gram properly
+    return U_k
+
+def project_out(H, U):
+    return H - (H @ U) @ U.T
+
+def project_in(H, U, alpha=1.0):
+    P = U @ U.T
+    return H + alpha*(H @ P)
+```
+
+### Layer-patch & Head path-patch
+
+```python
+# utils/patching.py
+import torch
+
+def layer_patch_crossmodel(model_tuned, tok_tuned, text, layer_idx, h_src, mask_logits_fn=None, allowed_ids=None):
+    """Run tuned model on text, but replace residual at layer_idx with h_src (1,d)."""
+    # Pseudocode: register a hook that overwrites the residual at that layer for the last token
+    # Then forward, read logits, optionally mask, return metrics/logits
+    pass  # TODO: implement copy-over in the hook; handle sequence length alignment
+
+def head_patch_or_zero(model, layer_idx, head_idx, mode="zero"):
+    """Hook that either zeros a head's output-to-residual or swaps it (extend for swap)."""
+    pass
+```
+
+### Attribution (grad×act / IG)
+
+```python
+# utils/attribution.py
+import torch
+
+def grad_x_act(model, layer_idx, head_idx, target_scalar_fn, text, tok):
+    """
+    target_scalar_fn(logits, other) -> scalar (e.g., logp(correct) or refusal prob)
+    Return scalar attribution for this head on this text.
+    """
+    pass  # TODO: capture head output tensor, retain grad, backward target, reduce grad*act
+
+def integrated_gradients(model, layer_idx, head_idx, target_scalar_fn, text, tok, steps=20):
+    pass
+```
+
+### Metrics (refusal / math)
+
+```python
+# utils/metrics.py
+import re, torch
+
+REFUSAL_PATTERNS = [r"\bI (can(?:not|'t)|am unable)\b", r"\bI must not\b", r"\bI will not\b"]
+
+def refusal_score(text: str) -> float:
+    return 1.0 if any(re.search(p, text, flags=re.I) for p in REFUSAL_PATTERNS) else 0.0
+
+def logprob_correct(model, tok, question_text: str, correct_option_text: str, mask_logits_fn=None, allowed_ids=None):
+    """Return log P(correct_option | prompt). Implement multiple-choice wrapper."""
+    pass
+```
+
+### Plotting stubs
+
+```python
+# utils/plotting.py
+def plot_divergence_curve(layers, cka_vals, out="fig_divergence.png"): ...
+def plot_clt_bars(layers, r2_vals, out="fig_clt_r2.png"): ...
+def plot_effect_vs_k(k_list, steer_delta, ablate_delta, side_effects, out="fig_rankk.png"): ...
+def plot_head_churn(head_deltas, out="fig_churn.png"): ...
+```
+
+## A4. Notebooks: minimal cells per RQ
+
+* **R1\_baseline.ipynb**
+
+  * Load pair + defaults; build shared vocab; filter prompts; run MC/refusal metrics
+  * Layer sweep: CKA on last-token residuals every 2 layers → choose top-2 layers
+  * **NEW**: cross-model **layer patch** at those layers; bar of Δ metric
+
+* **R2\_clt.ipynb**
+
+  * Sample \~8–10k token positions at chosen layer(s); standardize; train ridge (grid lam)
+  * Report **R²**/CKA (mapped vs true). **NEW**: mapped-patch vs real-patch agreement
+
+* **R3\_causal.ipynb**
+
+  * Build rank-k projector from aligned vs neutral sets (cultural) / correct vs incorrect (math)
+  * **Steer** (α grid) & **Ablate** on dev; fix α; test on eval; side-effects on neutral set
+  * **Head path patching**: top heads; small histogram
+
+* **R4\_churn.ipynb**
+
+  * grad×act attribution for all heads at chosen layer(s)
+  * Churn bars & top-k overlap; (optional) cumulative effect by patching top-k heads
+
+---
+
+# B) Human-Readable Note (fill-after report)
+
+Use this as your 2-page write-up skeleton.
+
+## Title
+
+CultureShift vs CogShift: Tokenizer-Robust, Causal Model-Diffing With Cross-Layer Coding
+
+## Executive Summary
+
+* **Baseline:** (numbers) Tuned − Base on \[dataset] = **+X pp**; refusal **±Y pp**; divergence peaks at **Layer L**.
+* **Transportability (CLT):** R² = **Z** at Layer L (mapped-patch ≈ real-patch).
+* **Causal handle:** Steer **+Δ%**, Ablate **−Δ%** (side-effects ≤ **ε**).
+* **Contrast:** Cultural needs **rank k=…**, Cognitive needs **k=…**; head-churn (cog > cult).
+
+## Objective
+
+Establish an actionable, tokenizer-robust, low-rank causal handle for cultural alignment and contrast it with cognitive tuning on the same backbone.
+
+## Setup (Models, Data, Fairness)
+
+* **Base:** Llama-3.1-8B-Instruct; **Cultural:** Sherkala-style; **Cognitive:** OpenMath2-Llama-3.1-8B.
+* **Fairness:** Shared-vocab filter, output logit masking, post-embedding interventions.
+* **Data:** (list sizes).
+* **Diagnostics:** % next-token mass on new tokens (descriptive only).
+
+## RQ1 — Baseline Divergence (Method & Results)
+
+* **Method:** Behavioral metrics; layerwise CKA. **NEW:** cross-model layer patch at top layers.
+* **Results:** Divergence peaks at L=…; layer-patch Δ confirms causal entry points.
+* **Takeaway:** Probe layers L=… in RQ2–RQ4.
+
+## RQ2 — CLT Transportability (Method & Results)
+
+* **Method:** Ridge mapping base→tuned at chosen layer(s); report R²/CKA. **Mapped-patch** sanity.
+* **Results:** R²=… (cultural) vs … (cognitive); mapped-patch ≈ real-patch at layer …
+* **Takeaway:** Cultural shows higher linear transportability / different layer.
+
+## RQ3 — Causal Control & Rank (Method & Results)
+
+* **Method:** Build rank-k projector; steer/ablate; α tuned on dev; side-effects measured.
+* **Results:** Minimal k achieving ≥(10–20)% effect: cultural k=…, cognitive k=…; side-effects ≤ ε.
+* **Takeaway:** Cultural behaves like a low-rank policy knob; cognitive needs higher rank.
+
+## RQ4 — Structure Change (Edges) (Method & Results)
+
+* **Method:** grad×act attribution on head outputs; churn = % heads above threshold; (optional) causal scrubbing & path-patch.
+* **Results:** Churn(cognitive) > Churn(cultural); top-k overlap differs; cumulative top-k curve.
+* **Takeaway:** Cognitive tuning exhibits distributed edge rewiring; cultural tweaks concentrated pathways.
+
+## Robustness
+
+* **Languages:** Cultural handle transfers KK↔RU/EN within **±…%**.
+* **Prompt styles:** Effects persist across templates.
+* **Fairness:** Turning off masking changes (or not) results by … (report).
+
+## Limitations
+
+Tokenizer drift still complicates early layers; small sample sizes; regex-based refusal proxy.
+
+## Reuse For Practitioners
+
+* Where to monitor (layers), rank-k handle, conditional steering (probe→steer) to reduce side-effects.
+
+## References
+
+(Your short list.)
+
+---
+
+# C) How to run the pipeline on different “versus” pairs
+
+You’ll compare **(backbone vs cultural)** and **(backbone vs cognitive)**—and you might later swap to **EN cultural** instead of KK.
+
+## 1) Backbone vs Cultural (KK or EN)
+
+* **Pair file:** `pairs/pair_cultural.py` (as above).
+* **Fairness:** **Required** — Sherkala likely changed tokenizer (new tokens). Keep **shared-vocab filter** and **mask logits** ON for all cross-model comps and causal tests.
+* **Prompts:**
+
+  * **KK path:** use your KK socio-cultural MC + `prompts_freeform_kk.jsonl` (write 40 prompts).
+  * **EN path:** use small EN basket (HH-RLHF slice, RealToxicityPrompts slice, BBQ slice, Role prompts).
+* **Metrics:** refusal rate, style markers, toxicity/bias (if EN basket).
+* **Layer choice:** mid-late layers usually matter (confirm via CKA + layer-patch).
+* **CLT note:** mapping may be slightly weaker due to tokenizer drift; use **standardization** and **mapped-patch** sanity.
+
+## 2) Backbone vs Cognitive (Math)
+
+* **Pair file:** `pairs/pair_cognitive.py`.
+* **Fairness:** **Recommended** (same tokenizer, but keep controls on for symmetry).
+* **Prompts:** GSM8K (300 sampled) + MATH (100 sampled). Use short-answer or MC wrapper; no CoT unless you study it.
+* **Metrics:** accuracy and Δ log-prob(correct).
+* **Layer choice:** divergence may peak mid-layers; confirm with CKA + layer-patch.
+* **CLT note:** mapping is typically **cleaner** (same tokenizer) → good contrast to cultural.
+
+## 3) Swapping domains or languages
+
+You only need to change:
+
+* **Pair config** (`pairs/pair_*.py`) model IDs & dataset pointers.
+* **Prompt files** (e.g., switch `prompts_freeform_kk.jsonl` ↔ `prompts_freeform_en.jsonl`).
+* **Regexes/metrics** if you move from refusal→toxicity/bias (EN basket).
+
+All **utils** remain identical: shared-vocab + masking, hooks, CLT, steering/ablation, patching, attribution.
+
+## 4) “Run all” pattern
+
+Create a tiny runner (script or makefile) that does:
+
+```
+python run_rq1_baseline.py --pair pairs/pair_cultural.py
+python run_rq2_clt.py      --pair pairs/pair_cultural.py
+python run_rq3_causal.py   --pair pairs/pair_cultural.py
+python run_rq4_churn.py    --pair pairs/pair_cultural.py
+
+python run_rq1_baseline.py --pair pairs/pair_cognitive.py
+...
+```
+
+Each runner just imports `PAIR` and `DEFAULTS`, then calls the corresponding notebook or script functions.
+

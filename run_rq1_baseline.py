@@ -9,7 +9,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from mechdiff.config import DEFAULTS
 from mechdiff.utils.tokenizers import load_tokenizers, shared_vocab_maps
-from mechdiff.utils.fairness import filter_shared
+from mechdiff.utils.fairness import filter_shared, filter_shared_ratio
 from mechdiff.utils.activations import collect_last_token_resids
 from mechdiff.utils.cka import linear_cka
 
@@ -28,6 +28,7 @@ def main():
     ap.add_argument("--layers", default="", help="Comma-separated explicit layer indices; otherwise stride=")
     ap.add_argument("--stride", type=int, default=DEFAULTS["layer_stride"]) 
     ap.add_argument("--prompt_file", default=None, help="Override freeform file path")
+    ap.add_argument("--min_shared_ratio", type=float, default=1.0, help="Keep prompts where both tokenizers have ≥ this fraction of tokens in the shared set")
     args = ap.parse_args()
 
     pair = load_pair(args.pair)
@@ -64,7 +65,10 @@ def main():
             "Абай Құнанбайұлы кім?",
         ]
     # Filter to shared-vocab prompts
-    kept = filter_shared(prompts, tok_b, tok_t, shared)
+    if args.min_shared_ratio >= 1.0:
+        kept = filter_shared(prompts, tok_b, tok_t, shared)
+    else:
+        kept = filter_shared_ratio(prompts, tok_b, tok_t, allowed_b, allowed_t, args.min_shared_ratio)
     print(f"Prompts kept after shared-vocab filter: {len(kept)}/{len(prompts)}")
     if not kept:
         print("No prompts survived filtering; exiting.")

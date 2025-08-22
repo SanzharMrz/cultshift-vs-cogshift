@@ -1,0 +1,395 @@
+Got it — here’s a plain-English, step-by-step “Cursor brief” for **Section A** that your teammate can follow without reading code. It tells them exactly what to create, how to wire pieces together, how to test each function, and what “done” looks like for every stage. I also repeat the key decisions (models, sizes, metrics, etc.) so they don’t need to ask you again.
+
+---
+
+# Cursor Instructions (Natural-Language, Actionable)
+
+## 0) Before You Start (10–20 min)
+
+1. **Python & GPU**
+
+   * Use Python **3.10+**. GPU is helpful (24–40 GB VRAM ideal). If GPU is small, we’ll save activations and run mapping on CPU.
+2. **Install**
+
+   * `pip install torch transformers accelerate einops scikit-learn matplotlib`
+   * If you see CUDA mismatch, install a matching PyTorch wheel from pytorch.org.
+3. **Hugging Face**
+
+   * `huggingface-cli login` (paste token).
+   * Run a tiny smoke test: load `meta-llama/Llama-3.1-8B-Instruct` and generate 1 token.
+
+**Definition of done:** You can import Torch/Transformers; the base model loads and generates; you can see the GPU in `torch.cuda.is_available()` (fine if False).
+
+---
+
+## 1) Create the Repo Skeleton (5 min)
+
+Create this exact structure:
+
+```
+mechdiff/
+  config.py
+  pairs/
+    pair_cultural.py
+    pair_cognitive.py
+  data/
+    prompts_freeform_en.jsonl
+    prompts_freeform_kk.jsonl
+  utils/
+    io.py
+    tokenizers.py
+    fairness.py
+    hooks.py
+    activations.py
+    cka.py
+    clt.py
+    steering.py
+    patching.py
+    attribution.py
+    metrics.py
+    plotting.py
+  notebooks/
+    R1_baseline.ipynb
+    R2_clt.ipynb
+    R3_causal.ipynb
+    R4_churn.ipynb
+  README.md
+```
+
+**Definition of done:** Folders exist; empty files created.
+
+---
+
+## 2) Lock the Defaults (5 min)
+
+Open `config.py` and paste these **final decisions** (don’t change unless asked):
+
+* **Models**
+
+  * Base: `meta-llama/Llama-3.1-8B-Instruct`
+  * Cultural: `inceptionai/Llama-3.1-Sherkala-8B-Chat`
+  * Cognitive: `nvidia/OpenMath2-Llama3.1-8B`
+* **Fairness controls**
+
+  * Always enforce **shared-vocab filtering** and **logit masking** for cross-model comparisons and causal tests.
+  * Only patch **post-embedding** (residual after each block).
+* **Data sizes**
+
+  * Free-form cultural prompts: **40**
+  * GSM8K sample: **300**; MATH sample: **100**
+* **RQ1 metrics**
+
+  * **CKA** only (add PWCCA/ITDA later only if needed).
+  * Scan every **2 layers** (2,4,6, …).
+* **RQ2 (CLT)**
+
+  * **8–10k** token positions per chosen layer; 20% held-out; standardize features.
+* **RQ3 (Causal)**
+
+  * k sweep = **\[1,2,3,4,6,8]**; α grid = **\[0.5,1.0,2.0,3.0]**
+  * Side-effect thresholds: ≤ **5 pp** neutral drop; ≤ **5%** perplexity increase.
+* **RQ4 (Churn)**
+
+  * Mark “important” heads if **z ≥ 2.0** (within-layer) or absolute Δ ≥ **0.5 nat** (math) / **5 pp** (refusal).
+* **Fallback layers**
+
+  * Use **22 & 26** if scanning is skipped.
+
+**Definition of done:** `config.py` contains the above; team agrees these are the defaults for the week.
+
+---
+
+## 3) Fill Pair Configs (10–15 min)
+
+* `pairs/pair_cultural.py`: set the Base & Cultural model IDs above; point to **Kazakh MC** and `data/prompts_freeform_kk.jsonl` (will be filled later). If you pivot to English, switch to your EN basket files.
+* `pairs/pair_cognitive.py`: set Base & Cognitive IDs; point to GSM8K & MATH datasets.
+
+**Definition of done:** Two pair files exist; each has a `PAIR` dict with `name`, `base_id`, `tuned_id`, dataset refs, `domain`, and `tokenizer_policy` (“shared\_vocab\_required” for cultural; “shared\_vocab\_recommended” for cognitive).
+
+---
+
+## 4) Implement Tokenizer & Fairness Utilities (40–60 min)
+
+Goal: guarantee fair model-to-model comparisons despite different tokenizers.
+
+* **`tokenizers.py`**
+
+  * `load_tokenizers(base_id, tuned_id)`: return slow tokenizers (use\_fast=False).
+  * `shared_vocab_maps(tok_base, tok_tuned)`: compute shared token **strings**, maps to **IDs** for each tokenizer, and the **allowed ID sets**.
+
+* **`fairness.py`**
+
+  * `uses_only_shared(text, tok, shared)`: True if every token is in `shared`.
+  * `filter_shared(prompts, tok_base, tok_tuned, shared)`: keep only prompts valid in both tokenizers.
+  * `mask_logits_to_allowed(logits, allowed_ids)`: replace logits for out-of-shared IDs with `-inf`.
+
+**Quick test (must pass)**
+
+* Load both tokenizers. Print: base vocab size, tuned vocab size, **% increase**.
+* On 5–10 sample prompts, check `uses_only_shared` and the size of the filtered list.
+* After a forward pass, apply the logit mask and confirm argmax is always in the allowed set.
+
+**Definition of done:** You can report: (1) exact vocab sizes and % increase; (2) % of prompts that survive filtering; (3) masked logits keep generation inside the shared set.
+
+---
+
+## 5) Implement Hooks & Activation Capture (40–60 min)
+
+Goal: capture the **residual stream after a block**; we’ll use this for CKA, CLT, and patching.
+
+* **`hooks.py`**
+
+  * `get_blocks(model)`: return the list of transformer blocks.
+  * `LayerActCache` context manager: register/remove a forward hook on block **L**, store its **output tensor**.
+* **`activations.py`**
+
+  * `collect_last_token_resids(model, tok, texts, layer_idx)`: for each text, run the model; from the cached tensor, extract the **last token** residual (shape `(1, d_model)`), stack to `(N, d_model)`.
+
+**Quick test (must pass)**
+
+* For a list of 3 short prompts, print the tensor shape. Confirm `d_model` equals the model config’s hidden size.
+
+**Definition of done:** Given texts and a layer index, you can get `(N, d_model)` residuals reproducibly.
+
+---
+
+## 6) Implement Representation Similarity (CKA) (20–30 min)
+
+* **`cka.py`**
+
+  * `linear_cka(X, Y)`: inputs `(N, d)` from **the same prompts**, one from each model. Zero-mean inside, compute CKA scalar.
+
+**Quick test (must pass)**
+
+* Use random `X==Y` → CKA ≈ 1; `X` vs `Y` where `Y` is permuted rows → CKA lower.
+* On 50 real prompts at one layer, compute CKA(base, tuned) — get a reasonable number (0–1).
+
+**Definition of done:** You can produce a **layer-wise CKA curve** across layers (every 2 layers).
+
+---
+
+## 7) Implement CLT Mapping (Ridge) (60–90 min)
+
+* **`clt.py`**
+
+  * `standardize(X)`: zero-mean/unit-var; return `(X_std, (mu, sd))`.
+  * `fit_ridge(X, Y, lam)`: solve `(XᵀX + λI)W = XᵀY` to map base→tuned.
+  * `map_states(X, W)`: compute `X @ W`.
+* Use **train/val split** (80/20). Tune λ on val (grid: 1e-6…1e-1). Report **R²** on val.
+
+**Quick test (must pass)**
+
+* If you map base→base on the same data, R² should be high (sanity).
+* Mapping base→tuned should give a stable R² (not NaN) and improve over random.
+
+**Definition of done:** On chosen layer(s), you can report **R²** and **CKA(mapped, tuned)**.
+
+---
+
+## 8) Implement Steering/Ablation (Rank-k) (60–90 min)
+
+* **`steering.py`**
+
+  * `difference_in_means(A, B)`: unit vector from mean difference (aligned vs neutral).
+  * `svd_around_direction(A, d, k)`: build a small **orthonormal basis** `U_k` (k columns).
+  * `project_in(H, U, alpha)`: add `alpha*(H @ (U Uᵀ))`.
+  * `project_out(H, U)`: subtract `(H @ (U Uᵀ))`.
+
+**Quick test (must pass)**
+
+* On synthetic `H`, `project_out(H, U)` reduces variance along `U`; `project_in` increases it.
+* In a dev run on 10 prompts, steering with small α changes the metric in the expected direction.
+
+**Definition of done:** You can sweep **k** and **α**, measure target change and side effects.
+
+---
+
+## 9) Implement Layer Patching & Head Path Patching (90–120 min)
+
+* **Goal:** make **causal** swaps.
+* **Layer patching**
+
+  * For cross-model: run both models on the **same prompt**; at layer **L**, replace the tuned residual with the base residual (standardized/de-standardized with a calibration batch).
+  * After patch, compute the target metric (refusal/style/Δlogp).
+* **Head path patching**
+
+  * Hook **after attention**; for a single head, **zero** its output-to-residual (to test importance). Also support “swap head output from tuned→base” if time permits.
+
+**Quick test (must pass)**
+
+* Layer patching on a few prompts produces a **non-zero** change in the target metric on at least one of your top-divergence layers.
+* Zeroing a head in a chosen layer changes the metric for at least a few prompts (not always, but it should work somewhere).
+
+**Definition of done:** You can run layer-patch bars and head-importance histograms for selected layers.
+
+---
+
+## 10) Implement Attribution (grad×act; IG optional) (60–90 min)
+
+* **`attribution.py`**
+
+  * Define a **target scalar**:
+
+    * Cultural: probability of a **refusal pattern** (simple regex-based surrogate on the generated text).
+    * Cognitive: **log-prob of the correct option**.
+  * `grad_x_act(...)`: run forward, compute the target scalar, backprop to each head’s **output tensor** at layer **L**, reduce `grad * activation` to a scalar per head.
+  * (Optional) `integrated_gradients(...)`: do m steps from a zero baseline to actual head output; average gradients.
+
+**Quick test (must pass)**
+
+* Gradient flows are non-zero; at least some heads have large positive attribution values on target prompts.
+
+**Definition of done:** You can rank heads by attribution and compute a **churn** plot (fraction above threshold).
+
+---
+
+## 11) Data Prep & Small Smoke Runs (60–90 min)
+
+* **Kazakh MC**: load via HF; build 40 **free-form** cultural prompts (kk/en). Save to `data/prompts_freeform_*.jsonl`.
+* **Math**: sample GSM8K 300; MATH 100.
+* Compute: **% prompts retained** after shared-vocab filtering for the cultural pair.
+* Quick behavioral snapshot (10–20 items) to confirm metrics compute.
+
+**Definition of done:** Data files load; you have a one-line print of “retained %” and small sanity metrics.
+
+---
+
+## 12) Notebooks (one per RQ) with “Definition of Done”
+
+**R1\_baseline.ipynb**
+
+* Inputs: chosen **pair** (cultural or cognitive) + defaults.
+* Steps: shared-vocab filter → behavioral metrics → **CKA** every 2 layers → **layer-patch** for **top-3** layers.
+* **DoD:** (1) CKA curve PNG; (2) table of behavioral deltas; (3) bar of Δ from layer-patch; (4) chosen **1–2 layers** for RQ2–RQ3.
+
+**R2\_clt.ipynb**
+
+* Steps: sample \~10k positions at chosen layer(s) → standardize → fit ridge (grid λ) → report **R²** + **CKA**(mapped,tuned) → **mapped-patch vs real-patch** agreement (one small bar).
+* **DoD:** PNG with R² bars; one line showing mapped-patch ≈ real-patch within tolerance.
+
+**R3\_causal.ipynb**
+
+* Steps: build rank-k subspace (aligned vs neutral for cultural; correct vs incorrect for math) → tune α on 50-prompt dev → report steer↑ / ablate↓ vs k; side-effects on neutral set → **head path patching** histogram for the key layer.
+* **DoD:** PNG effect-vs-k with side-effect ribbon; histogram of head importance; a line stating minimal **k** that meets effect ≥10–20% with side-effects ≤ ε.
+
+**R4\_churn.ipynb**
+
+* Steps: **grad×act** attribution per head at chosen layer(s) → compute **churn** (% heads above threshold) and **top-k overlap** (base vs tuned) → (optional) cumulative effect by patching top-k heads.
+* **DoD:** churn bar plot (cognitive > cultural expected); small table of top-k overlaps.
+
+---
+
+## 13) Logging, Saving, and Re-Runs (15 min)
+
+* Save all figures to `figs/*.png`.
+* Save intermediate tensors (activations, W matrices) to `artifacts/*.pt`.
+* Add a `RUN.md` with the exact commands or cell order to reproduce.
+
+**Definition of done:** `figs/` and `artifacts/` contain outputs; `RUN.md` exists.
+
+---
+
+## 14) Troubleshooting (read before you DM)
+
+* **VRAM OOM:** reduce batch size to 1; run activation collection on CPU; cut token positions to 3k for CLT; use only 1 layer.
+* **Masked logits look empty:** ensure `allowed_ids` set is non-empty; print its size; ensure you sorted indices before indexing.
+* **Patch does nothing:** verify you’re patching **post-embedding** at the right block; print norms of the original vs patched residual.
+* **R² is NaN:** standardize inputs; increase λ; reduce dimensionality (try PCA to 512 first if needed).
+* **Refusal score never changes:** test on explicit refusal prompts; check your regex list; try another pattern.
+
+---
+
+## 15) “Decisions This Repo Assumes” (paste to README)
+
+* **Models:** Base chat, Sherkala cultural, OpenMath2 cognitive.
+* **Controls:** shared-vocab filtering and masked logits everywhere; post-embedding hooks only.
+* **Metrics:** CKA for RQ1; R²+CKA for RQ2; steer/ablate vs k (+ side effects) for RQ3; grad×act churn for RQ4.
+* **Layers:** scan every 2 layers; default to 22 & 26.
+* **Success thresholds:** R² ≥ 0.3–0.5; ≥10–20% target effect with ≤5 pp neutral drop; churn(cognitive) > churn(cultural).
+
+---
+
+# How to Diverge Across Pairs (Backbone vs Cultural vs Cognitive)
+
+* To switch from **backbone↔cultural** to **backbone↔cognitive**, only change the **pair file** in the runner or notebook (and the datasets).
+* Keep **all fairness controls ON** for cultural (tokenizer drift). For cognitive, controls stay ON for symmetry even though tokenizer matches.
+* If you pivot Kazakh→English cultural:
+
+  * Replace `prompts_freeform_kk.jsonl` with `prompts_freeform_en.jsonl`.
+  * Swap the MC dataset to your EN basket (HH-RLHF slice, RealToxicityPrompts, BBQ, Role prompts).
+  * The rest of the pipeline is unchanged.
+
+---
+
+## What Good Looks Like (acceptance checklist for the week)
+
+* ✅ **R1:** For each pair, a CKA curve, a small behavior table, and a layer-patch bar; layers selected.
+* ✅ **R2:** For each pair, an R² bar chart and a mapped-patch ≈ real-patch check.
+* ✅ **R3:** For each pair, effect-vs-k plot with side-effect ribbon, α chosen, minimal k reported, plus a head-importance histogram.
+* ✅ **R4:** Churn plot (cognitive > cultural), and (optional) cumulative top-k effect curve.
+* ✅ **README:** headline numbers + how to reproduce.
+
+If you follow the steps above in order, you’ll have working notebooks and plots without needing to read any code stubs.
+
+
+Here’s the high-level picture of our **updated concept**—what we’ll actually do, why it’s novel, and what you should walk away understanding.
+
+## What we’re doing (in one sentence)
+
+We’ll **fairly diff** a base Llama-3.1-8B against (a) a **cultural/behavioral** fine-tune and (b) a **cognitive/math** fine-tune, then show that cultural changes look like a **low-rank, steerable “policy” subspace**, while cognitive changes look more like **distributed circuit rewiring**—using **cross-layer coding (CLT)**, **activation/path patching**, and **edge attribution**.
+
+## The plan, step by step
+
+1. **Fair baseline (RQ1):**
+   Under strict fairness (shared-vocab filtering, masked logits, post-embedding only), we measure:
+
+   * Behavioral gaps (accuracy, refusal/style/toxicity, Δ log-prob(correct)).
+   * Representation gaps via **CKA** per layer.
+   * Quick **layer-patch** sanity (swap layer activations across models) to identify causal entry layers.
+2. **Transportability (RQ2):**
+   Learn a simple **cross-layer coder** (ridge) to map base→tuned hidden states at the chosen layer(s). Evaluate with **R²/CKA** and verify **mapped-patch ≈ real-patch**.
+   → If cultural mapping is stronger, it hints the change is mostly linear/low-rank.
+3. **Causal control & rank (RQ3):**
+   Build a **rank-k projector** from aligned vs neutral (cultural) or correct vs incorrect (cognitive) activations.
+
+   * **Steer** the base (add α·P·h) → increases target behavior.
+   * **Ablate** in the tuned model (project out P·h) → reduces target behavior.
+   * Sweep **k=1..8** and **α**, record **effect vs side-effects** (perplexity/neutral accuracy).
+   * Add **head/path patching** to pinpoint which components matter most.
+4. **Structure change (RQ4):**
+   Use **grad×act (or IG)** on head outputs to quantify **edge importance** and compute **head churn** (% important heads).
+   → Expect **higher churn** for cognitive (rewiring), **lower, concentrated** changes for cultural (policy knob).
+5. **Robustness checks:**
+
+   * Cultural handle transfers **KK↔RU/EN** prompts.
+   * Results are stable across prompt styles; fairness controls matter most near embeddings.
+
+## What you should understand by the end
+
+* **Fairness matters:** Tokenizer drift can fake differences. Shared-vocab + masked logits + post-embedding interventions give apples-to-apples comparisons.
+* **Transportability vs. rewiring:**
+
+  * If **CLT R² is high** and a tiny **rank-k** (k≤3) subspace can **steer/ablate** cultural behavior with small side-effects, cultural tuning is **policy-like**.
+  * If cognitive needs **larger/unstable k**, weaker CLT, and shows **more important heads (churn)**, it’s **algorithmic/rewiring-like**.
+* **Causality, not correlation:** Activation/layer patches and steer/ablate prove cause-and-effect, not just similarity curves.
+* **Portable handle:** You’ll have a **small, reusable subspace** that can monitor or gently steer cultural behavior across languages/models, even with different tokenizers.
+
+## Why this is novel/useful
+
+* **Direct comparison, same pipeline** of **cultural vs cognitive** fine-tunes (most work studies one).
+* **Tokenizer-robust cross-model diff** (CLT + mapped-patch) on cultural tuning—a setting that usually breaks naive comparisons.
+* Produces a **practical control** (rank-k subspace) that teams can actually use for **monitoring/steering** during fine-tuning.
+
+## Concrete outputs you’ll report
+
+* **Fig A:** Layer-wise CKA + layer-patch bars (where differences enter).
+* **Fig B:** CLT R²/CKA (mapped vs true) + mapped-patch ≈ real-patch check.
+* **Fig C:** Steer↑ / Ablate↓ vs **k**, with side-effect bands; minimal **k** that works.
+* **Fig D:** Head-churn bars and (optional) cumulative top-k effect curve.
+* **Headline numbers** in an executive summary (behavior deltas, R², steer/ablate effect, portability).
+
+## If results go the “other way”
+
+* If cultural **doesn’t** look low-rank (needs big k, weak CLT, high churn), that’s still a publishable takeaway: cultural tuning may sometimes reconfigure circuits like cognitive tasks. We’ll document where (layers/components) and under which prompts it breaks.
+
+That’s the upgraded concept in a nutshell: **fair, causal, tokenizer-robust** diffing that separates **policy-style vs algorithmic** changes—and gives you a **small, portable control** you can reuse.

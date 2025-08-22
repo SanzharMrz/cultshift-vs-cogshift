@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: current file (remote, mirrored output)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": { "PYTHONUNBUFFERED": "1" },
+      "redirectOutput": true,
+      "internalConsoleOptions": "neverOpen",
+      "justMyCode": true,
+      "subProcess": true,
+      "envFile": "${workspaceFolder}/.env"
+    }
+  ]
+}
