@@ -3,4 +3,5 @@
 *.json
 venv/
 *.jsonl
+.env
 
