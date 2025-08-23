@@ -342,7 +342,9 @@ def main():
         "soft_refusal_delta_base_masked": round(soft_delta_base_masked, 4),
         "soft_refusal_delta_tuned_masked": round(soft_delta_tuned_masked, 4),
     }
-    with open("mechdiff/artifacts/rq1_behavior.json", "w", encoding="utf-8") as f:
+    out_dir = os.path.join("mechdiff", "artifacts", "rq1")
+    os.makedirs(out_dir, exist_ok=True)
+    with open(os.path.join(out_dir, "rq1_behavior.json"), "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
 
     if args.debug:
@@ -353,12 +355,11 @@ def main():
         print(f"[DEBUG] MC means: masked={out['mc_dlogp_correct_mean_masked']}, unmasked={out['mc_dlogp_correct_mean_unmasked']}")
 
     # Per-prompt refusal CSV
-    with open("mechdiff/artifacts/rq1_refusals.csv", "w", encoding="utf-8") as f:
+    with open(os.path.join(out_dir, "rq1_refusals.csv"), "w", encoding="utf-8") as f:
         f.write("prompt_idx,base_refusal,tuned_refusal\n")
         for i, (rb, rt) in enumerate(zip(refusals_base, refusals_tuned)):
             f.write(f"{i},{rb},{rt}\n")
-
-    print("Saved mechdiff/artifacts/rq1_behavior.json and rq1_refusals.csv")
+    print("Saved mechdiff/artifacts/rq1/rq1_behavior.json and rq1_refusals.csv")
 
 
 if __name__ == "__main__":

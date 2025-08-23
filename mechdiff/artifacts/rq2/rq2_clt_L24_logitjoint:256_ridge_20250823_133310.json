@@ -1,0 +1,20 @@
+{
+  "layer": 24,
+  "n_train": 450,
+  "n_val": 150,
+  "k_positions": 10,
+  "val_r2": -0.1932,
+  "train_r2": 0.6886,
+  "r2_shuffled": -0.7286,
+  "lam": 10.0,
+  "solver": "ridge",
+  "pca_q": 0,
+  "logit_subspace": "joint:256",
+  "cka_mapped_vs_tuned_val": 0.5506,
+  "cos_stats": {
+    "mean": 0.35491841996709506,
+    "median": 0.372545450925827,
+    "p10": 0.1714213490486145,
+    "p90": 0.5113528370857239
+  }
+}

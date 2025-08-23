@@ -29,6 +29,8 @@ def main():
     ap.add_argument("--stride", type=int, default=DEFAULTS["layer_stride"]) 
     ap.add_argument("--prompt_file", default=None, help="Override freeform file path")
     ap.add_argument("--min_shared_ratio", type=float, default=1.0, help="Keep prompts where both tokenizers have ≥ this fraction of tokens in the shared set")
+    ap.add_argument("--bootstrap", type=int, default=0, help="If >0, number of bootstrap resamples (size=200) for CI")
+    ap.add_argument("--hook", default="resid_post", help="Hook site: resid_pre|resid_post|attn_out|mlp_out")
     args = ap.parse_args()
 
     pair = load_pair(args.pair)
@@ -89,17 +91,44 @@ def main():
 
     cka_by_layer = {}
     for L in layers:
-        Hb = collect_last_token_resids(base, tok_b, kept, L, device=device)
-        Ht = collect_last_token_resids(tuned, tok_t, kept, L, device=device)
+        Hb = collect_last_token_resids(base, tok_b, kept, L, device=device, hook_type=args.hook)
+        Ht = collect_last_token_resids(tuned, tok_t, kept, L, device=device, hook_type=args.hook)
         cka = linear_cka(Hb, Ht)
         cka_by_layer[L] = cka
         print(f"Layer {L}: CKA = {cka:.4f}")
 
-    os.makedirs("mechdiff/artifacts", exist_ok=True)
-    out_path = "mechdiff/artifacts/rq1_cka.json"
+    out_dir = os.path.join("mechdiff", "artifacts", "rq1")
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, "rq1_cka.json")
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(cka_by_layer, f, ensure_ascii=False, indent=2)
     print(f"Saved: {out_path}")
+
+    # Optional bootstrap CI
+    if args.bootstrap and len(kept) >= 200:
+        import random
+        import math
+        B = args.bootstrap
+        boot = {L: [] for L in layers}
+        for b in range(B):
+            sample = [kept[i] for i in random.sample(range(len(kept)), k=min(200, len(kept)))]
+            for L in layers:
+                Hb = collect_last_token_resids(base, tok_b, sample, L, device=device, hook_type=args.hook)
+                Ht = collect_last_token_resids(tuned, tok_t, sample, L, device=device, hook_type=args.hook)
+                boot[L].append(linear_cka(Hb, Ht))
+        def mean(xs):
+            return sum(xs) / max(1, len(xs))
+        def ci95(xs):
+            xs = sorted(xs)
+            if not xs:
+                return [None, None]
+            lo_i = int(0.025 * (len(xs)-1))
+            hi_i = int(0.975 * (len(xs)-1))
+            return [xs[lo_i], xs[hi_i]]
+        cka_boot = {int(L): {"mean": mean(boot[L]), "ci95": ci95(boot[L])} for L in layers}
+        with open(os.path.join(out_dir, "cka_boot.json"), "w", encoding="utf-8") as f:
+            json.dump(cka_boot, f, ensure_ascii=False, indent=2)
+        print(f"Saved: {os.path.join(out_dir, 'cka_boot.json')}")
 
 
 if __name__ == "__main__":

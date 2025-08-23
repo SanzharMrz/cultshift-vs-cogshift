@@ -1,0 +1,7 @@
+{
+  "layer": 24,
+  "n": 5000,
+  "val_r2": 1.0,
+  "lam": 0.01,
+  "cka_mapped_vs_tuned": 1.0
+}

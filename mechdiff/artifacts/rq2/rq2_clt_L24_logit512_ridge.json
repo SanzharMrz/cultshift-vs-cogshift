@@ -1,0 +1,13 @@
+{
+  "layer": 24,
+  "n_train": 4723,
+  "n_val": 1534,
+  "k_positions": 10,
+  "val_r2": -0.0148,
+  "train_r2": 0.028,
+  "r2_shuffled": -0.0313,
+  "lam": 10.0,
+  "solver": "ridge",
+  "pca_q": 0,
+  "cka_mapped_vs_tuned_val": 0.0655
+}

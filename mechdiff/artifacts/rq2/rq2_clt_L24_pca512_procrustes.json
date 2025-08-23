@@ -1,0 +1,13 @@
+{
+  "layer": 24,
+  "n_train": 4723,
+  "n_val": 1534,
+  "k_positions": 10,
+  "val_r2": -1.733,
+  "train_r2": -1.2675,
+  "r2_shuffled": -1.869,
+  "lam": null,
+  "solver": "procrustes",
+  "pca_q": 512,
+  "cka_mapped_vs_tuned_val": 0.0553
+}

@@ -2,31 +2,31 @@
   "L24": {
     "tuned<-base": {
       "refusal_delta_pp": 0.0,
-      "kl_nexttoken": 0.997552490234375
+      "kl_nexttoken": 1.413544921875
     },
     "base<-tuned": {
       "refusal_delta_pp": 0.0,
-      "kl_nexttoken": 0.62994384765625
+      "kl_nexttoken": 0.6434988403320312
     }
   },
   "L26": {
     "tuned<-base": {
       "refusal_delta_pp": 0.0,
-      "kl_nexttoken": 1.1059326171875
+      "kl_nexttoken": 1.55556640625
     },
     "base<-tuned": {
       "refusal_delta_pp": 0.0,
-      "kl_nexttoken": 0.786297607421875
+      "kl_nexttoken": 0.7035101318359375
     }
   },
   "L10": {
     "tuned<-base": {
       "refusal_delta_pp": 0.0,
-      "kl_nexttoken": 0.36337890625
+      "kl_nexttoken": 0.62947265625
     },
     "base<-tuned": {
       "refusal_delta_pp": 0.0,
-      "kl_nexttoken": 0.01287095546722412
+      "kl_nexttoken": 0.014660730361938476
     }
   }
 }

@@ -1,0 +1,142 @@
+Here you go—**lean Cursor-style TODOs** with exact commands.
+
+---
+
+## Task 1 — L26 MLP split (mirror of your best late-layer results)
+
+**What to do**
+
+* Train CLT map at **L26 / `mlp_out`** (K=1, same hook/template/shrink).
+* Run mapped-patch and save JSON.
+
+**Commands**
+
+```bash
+# Train map
+python -m mechdiff.experiments.rq2.run_rq2_clt \
+  --pair mechdiff/pairs/pair_cultural.py \
+  --layer 26 --hook mlp_out --k1_decision \
+  --solver procrustes_scaled --shrink 0.05 --alpha auto
+
+# Apply mapped-patch
+MAP_PT=$(python - <<'PY'
+import json,glob
+j=sorted(glob.glob("mechdiff/artifacts/rq2/rq2_clt_L26_*mlp_out*procrustes_scaled*.json"))[-1]
+print(json.load(open(j))["map_path"])
+PY
+)
+python -m mechdiff.experiments.rq2.run_rq2_mapped_patch \
+  --pair mechdiff/pairs/pair_cultural.py \
+  --layer 26 --hook mlp_out --k1_decision --map_file "$MAP_PT"
+```
+
+**Success criteria (log):** positive ΔKL reduction (mapped < raw).
+
+---
+
+## Task 2 — Fix negative result at L24 `attn_out` (α sweep)
+
+**What to do**
+
+* Re-train/evaluate L24 `attn_out` with fixed **α ∈ {0.3, 0.5, 0.7, 1.0}**.
+* Report the **best** ΔKL drop.
+
+**Commands**
+
+```bash
+for A in 0.3 0.5 0.7 1.0; do
+  python -m mechdiff.experiments.rq2.run_rq2_clt \
+    --pair mechdiff/pairs/pair_cultural.py \
+    --layer 24 --hook attn_out --k1_decision \
+    --solver procrustes_scaled --shrink 0.05 --alpha $A
+
+  MAP_PT=$(python - <<'PY'
+import json,glob
+j=sorted(glob.glob("mechdiff/artifacts/rq2/rq2_clt_L24_*attn_out*procrustes_scaled*.json"))[-1]
+print(json.load(open(j))["map_path"])
+PY
+)
+  python -m mechdiff.experiments.rq2.run_rq2_mapped_patch \
+    --pair mechdiff/pairs/pair_cultural.py \
+    --layer 24 --hook attn_out --k1_decision --map_file "$MAP_PT"
+done
+```
+
+**Success criteria:** at least one α gives **mapped < raw** KL. Keep that map for the report.
+
+---
+
+## Task 3 — Early-layer validity check (shuffle/bogus control)
+
+**What to do**
+
+* Use a **bogus map** (e.g., L24 map) to patch **L10 / `resid_post`** and compare ΔKL vs the real L10 map (if/when we have it).
+* If a **--shuffle** option exists in CLT, also run it and compare.
+
+**Commands**
+
+```bash
+# Bogus map: patch L10 with an L24 resid_post map
+MAP_PT=$(python - <<'PY'
+import json,glob
+j=sorted(glob.glob("mechdiff/artifacts/rq2/rq2_clt_L24_*resid_post*procrustes_scaled*.json"))[-1]
+print(json.load(open(j))["map_path"])
+PY
+)
+python -m mechdiff.experiments.rq2.run_rq2_mapped_patch \
+  --pair mechdiff/pairs/pair_cultural.py \
+  --layer 10 --hook resid_post --k1_decision --map_file "$MAP_PT"
+```
+
+**Success criteria:** bogus L24→L10 should **not** beat legitimate L10 mapping; if it does, the L10 effect is generic (note this in the report).
+
+---
+
+## Task 4 — One-shot summary table (percent drops)
+
+**What to do**
+
+* Print a compact table of latest mapped-patch results for L10/L24/L26 across hooks.
+
+**Command**
+
+```bash
+python - <<'PY'
+import glob,json,os
+def pct(d): 
+    return 100*(d["KL_raw_mean"]-d["KL_mapped_mean"])/max(1e-9,d["KL_raw_mean"])
+pats=[
+ "mechdiff/artifacts/rq2/rq2_mappedpatch_L10_resid_post*.json",
+ "mechdiff/artifacts/rq2/rq2_mappedpatch_L24_resid_post*.json",
+ "mechdiff/artifacts/rq2/rq2_mappedpatch_L24_mlp_out*.json",
+ "mechdiff/artifacts/rq2/rq2_mappedpatch_L24_attn_out*.json",
+ "mechdiff/artifacts/rq2/rq2_mappedpatch_L26_resid_post*.json",
+ "mechdiff/artifacts/rq2/rq2_mappedpatch_L26_mlp_out*.json",
+ "mechdiff/artifacts/rq2/rq2_mappedpatch_L26_attn_out*.json",
+]
+rows=[]
+for pat in pats:
+    js=sorted(glob.glob(pat))
+    if not js: 
+        continue
+    d=json.load(open(js[-1]))
+    name=os.path.basename(js[-1])
+    drop = pct(d) if "KL_mapped_mean" in d else float("nan")
+    rows.append((name, drop, d.get("KL_raw_mean"), d.get("KL_mapped_mean")))
+w=max(len(r[0]) for r in rows) if rows else 40
+for name,drop,kr,km in rows:
+    km_str="NA" if km is None else f"{km:.3f}"
+    print(f"{name:<{w}}  drop={drop:6.1f}%  KL_raw={kr:.3f}  KL_mapped={km_str}")
+PY
+```
+
+**Success criteria:** clear table that we can paste into the lab notebook.
+
+---
+
+### Quick reminders for consistency
+
+* Always use **`--k1_decision`** and the same **chat template** as RQ1.
+* Keep **`--hook`** consistent between CLT and mapped-patch.
+* Prefer **`--alpha auto`** except in the L24 `attn_out` sweep (we’re testing scaling explicitly).
+* Note k\_positions is **1** in the JSON (K=1).

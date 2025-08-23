@@ -2,7 +2,7 @@ from typing import List
 
 import torch
 
-from .hooks import cache_layer
+from .hooks import cache_layer, cache_layer_with_hook
 
 
 def _format_chat(tok, user_text: str) -> str:
@@ -13,7 +13,7 @@ def _format_chat(tok, user_text: str) -> str:
         return user_text
 
 
-def collect_last_token_resids(model, tok, texts: List[str], layer_idx: int, device: str = "cuda", use_chat_template: bool = True):
+def collect_last_token_resids(model, tok, texts: List[str], layer_idx: int, device: str = "cuda", use_chat_template: bool = True, hook_type: str = "resid_post"):
     """Return (N, d_model) residuals at layer_idx for the last CONTENT token per text.
 
     Skips trailing special tokens (e.g., EOS) when selecting the index. Falls back to
@@ -35,7 +35,8 @@ def collect_last_token_resids(model, tok, texts: List[str], layer_idx: int, devi
                     sel_idx = i
                     break
             enc = {k: v.to(device) for k, v in enc.items()}
-            with cache_layer(model, layer_idx) as c:
+            # allow custom hook location
+            with cache_layer_with_hook(model, layer_idx, hook_type) as c:
                 _ = model(**enc)
             h = c.acts[-1][:, sel_idx, :].float().cpu()  # last content token
             feats.append(h)

@@ -1,0 +1,9 @@
+{
+  "layer": 26,
+  "n_train": 2392,
+  "n_val": 798,
+  "k_positions": 5,
+  "val_r2": -0.1809,
+  "lam": 1.0,
+  "cka_mapped_vs_tuned_val": 0.1098
+}

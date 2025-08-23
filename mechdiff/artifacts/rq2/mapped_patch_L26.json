@@ -1,0 +1,9 @@
+{
+  "layer": 26,
+  "hook": "mlp_out",
+  "k_positions": 1,
+  "n": 150,
+  "KL_raw_mean": 6.520505119959513,
+  "KL_mapped_mean": 5.901162975629171,
+  "reduction": 0.6193421443303428
+}

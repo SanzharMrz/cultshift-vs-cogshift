@@ -47,6 +47,7 @@ def main():
     ap.add_argument("--prompt_file", default=None)
     ap.add_argument("--min_shared_ratio", type=float, default=0.65)
     ap.add_argument("--layers", default="24,26,10")
+    ap.add_argument("--n_prompts", type=int, default=100)
     ap.add_argument("--debug", action="store_true")
     args = ap.parse_args()
 
@@ -83,6 +84,7 @@ def main():
     if not kept:
         print("No prompts after filter; exiting.")
         return
+    kept = kept[: max(1, args.n_prompts)]
 
     # Models
     device = args.device
@@ -141,6 +143,7 @@ def main():
         return float((p.exp() * (p - q)).sum(-1).item())
 
     results = {}
+    kl_summary = {}
     for L in layers:
         mu_b, sd_b, mu_t, sd_t = stats[L]
         ref_delta_tuned_from_base = []
@@ -209,21 +212,40 @@ def main():
             if args.debug:
                 print(f"[DEBUG] L{L} base<-tuned: r_orig={r_orig_b} r_pat={r_pat_b}")
 
+        # compute mean±std for KL lists
+        n_t = max(1, len(kl_list_tuned))
+        mean_t = float(sum(kl_list_tuned) / n_t)
+        std_t = float((sum((x - mean_t) ** 2 for x in kl_list_tuned) / max(1, n_t - 1)) ** 0.5) if n_t > 1 else 0.0
+        n_b = max(1, len(kl_list_base))
+        mean_b = float(sum(kl_list_base) / n_b)
+        std_b = float((sum((x - mean_b) ** 2 for x in kl_list_base) / max(1, n_b - 1)) ** 0.5) if n_b > 1 else 0.0
+
         results[f"L{L}"] = {
             "tuned<-base": {
                 "refusal_delta_pp": float(sum(ref_delta_tuned_from_base) / len(ref_delta_tuned_from_base) * 100.0),
-                "kl_nexttoken": float(sum(kl_list_tuned) / max(1, len(kl_list_tuned))),
+                "kl_nexttoken": mean_t,
             },
             "base<-tuned": {
                 "refusal_delta_pp": float(sum(ref_delta_base_from_tuned) / len(ref_delta_base_from_tuned) * 100.0),
-                "kl_nexttoken": float(sum(kl_list_base) / max(1, len(kl_list_base))),
+                "kl_nexttoken": mean_b,
             },
         }
 
-    os.makedirs("mechdiff/artifacts", exist_ok=True)
-    with open("mechdiff/artifacts/rq1_patch.json", "w", encoding="utf-8") as f:
+        kl_summary[f"L{L}"] = {
+            "tuned<-base": {"kl_mean": mean_t, "kl_std": std_t},
+            "base<-tuned": {"kl_mean": mean_b, "kl_std": std_b},
+        }
+
+    out_dir = os.path.join("mechdiff", "artifacts", "rq1")
+    os.makedirs(out_dir, exist_ok=True)
+    with open(os.path.join(out_dir, "rq1_patch.json"), "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
-    print("Saved mechdiff/artifacts/rq1_patch.json")
+    print("Saved mechdiff/artifacts/rq1/rq1_patch.json")
+
+    # Write KL mean±std summary
+    with open(os.path.join(out_dir, "patch_kl.json"), "w", encoding="utf-8") as f:
+        json.dump({"layers": kl_summary, "n_prompts": len(kept)}, f, ensure_ascii=False, indent=2)
+    print("Saved mechdiff/artifacts/rq1/patch_kl.json")
 
 
 if __name__ == "__main__":

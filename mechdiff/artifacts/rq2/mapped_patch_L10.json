@@ -1,0 +1,9 @@
+{
+  "layer": 10,
+  "hook": "resid_post",
+  "k_positions": 1,
+  "n": 150,
+  "KL_raw_mean": 7.946220198472341,
+  "KL_mapped_mean": 6.602341001828512,
+  "reduction": 1.3438791966438295
+}

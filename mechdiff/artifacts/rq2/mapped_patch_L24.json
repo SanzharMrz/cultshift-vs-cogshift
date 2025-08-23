@@ -1,0 +1,9 @@
+{
+  "layer": 24,
+  "hook": "attn_out",
+  "k_positions": 1,
+  "n": 150,
+  "KL_raw_mean": 5.7636544211705525,
+  "KL_mapped_mean": 7.026500716209411,
+  "reduction": -1.2628462950388588
+}
