@@ -1,0 +1,174 @@
+Got it—here’s a tight plan for **RQ3: Causal Control & Rank** plus clear, “Cursor-ready” instructions.
+
+---
+
+# RQ3 — Next Steps (what we’re testing)
+
+Goal: find a small late-layer **subspace** that causally controls the cultural shift, and measure how many directions (**k**) are needed to move the **base** model toward the **tuned** one—while keeping side-effects small.
+
+Primary signal: **ΔKL(base→tuned, last token)** on held-out prompts (same K=1, same chat template, same hook).
+Controls: early layer (L10), random subspace, ablation vs. steering.
+
+Effect target (success): **≥20% KL drop** vs. raw; side-effects: **≤10%** perplexity blow-up on a small neutral set.
+
+---
+
+# Instructions for Cursor (step-by-step)
+
+## Task 1 — Build “cultural-delta” subspaces Uₖ
+
+**Why:** label-free way to get the cultural direction(s) from real base↔tuned differences.
+
+1. **New module:** `mechdiff/experiments/rq3/build_subspace.py`
+
+   * Inputs: `--pair`, `--layer {24,26}`, `--hook {attn_out,resid_post,mlp_out}`, `--split train`, `--k_max 32`
+   * Collect **K=1** last content-token activations for the **same** prompts as RQ2 train (use `mechdiff/data/rq2/train_prompts.jsonl`) with the **same hook** and chat template.
+   * Get `H_b` (base) and `H_t` (tuned); form **difference matrix** `D = H_t - H_b` (N×d, float32).
+   * Compute SVD on centered `D`: `D_c = D - mean(D)`; `U, S, Vt = svd(D_c, full_matrices=False)`.
+
+     * Save top-k columns `U_k = Vt[:k].T` (d×k, orthonormal in the feature space).
+   * Save to `mechdiff/artifacts/rq3/subspaces/L{L}_{hook}_Uk.pt` with:
+
+     ```python
+     torch.save({
+       "layer": L, "hook": hook, "Uk": U_k, "S": S[:k], "mu_b": Hb_mean, "mu_t": Ht_mean
+     }, path)
+     ```
+   * Log: N, d, k\_max, ||D||\_F, top-8 singular values.
+
+**Run examples**
+
+```bash
+python -m mechdiff.experiments.rq3.build_subspace \
+  --pair mechdiff/pairs/pair_cultural.py --layer 24 --hook attn_out --k_max 32
+python -m mechdiff.experiments.rq3.build_subspace \
+  --pair mechdiff/pairs/pair_cultural.py --layer 26 --hook attn_out --k_max 32
+```
+
+---
+
+## Task 2 — Implement steer / ablate hooks
+
+**Why:** test causal control by **adding** or **removing** the Uₖ subspace at inference.
+
+1. **New util:** `mechdiff/utils/steer.py`
+
+   * Function `project_subspace(h, Uk): return Uk @ (Uk.T @ h)`  # (d,), (d×k)
+   * **Steer (amplify):** `h' = h + α * project_subspace(h, Uk)`
+   * **Ablate (remove):** `h' = h - project_subspace(h, Uk)` (full ablation)
+   * Add a context manager like `steer_layer(model, layer_idx, hook, Uk, mode, alpha)` mirroring your patch hooks; apply only at the **last content token** position (same K=1 decision function you already have).
+
+2. **New script:** `mechdiff/experiments/rq3/run_rq3_causal.py`
+
+   * Inputs:
+     `--pair`, `--layer {24,26,10}`, `--hook {attn_out,resid_post,mlp_out}`,
+     `--mode {steer,ablate}`, `--k_list 1,2,4,8,16`, `--alpha_list 0.1,0.3,0.5,1.0`,
+     `--split val`, `--subspace_file <pt from Task 1>`.
+   * For each (k, α):
+
+     * Load `Uk[:, :k]`.
+     * Run **base** with steer/ablate hook; keep **tuned** unchanged.
+     * Metric 1 (**primary**): **ΔKL drop** on val prompts (same K=1); compute KL(base\_intervened || tuned) and compare to KL(base\_raw || tuned); report **drop%**.
+     * Metric 2 (**style markers/100 tokens**): reuse your style marker function; log steer↑, ablate↓ (diagnostic).
+     * Side-effect A: **perplexity** change on a small neutral set (e.g., first 200 lines of `wikitext-2-raw-v1/validation` in English); target ≤10% increase.
+     * Side-effect B (optional quick check): Δ log-prob(correct) on 50 cultural MC items (should be small).
+   * Output JSON per run to `mechdiff/artifacts/rq3/rq3_causal_L{L}_{hook}.json` with a compact table of rows:
+
+     ```
+     {"k":k,"alpha":a,"mode":mode,
+      "kl_raw":..., "kl_int":..., "drop_pct":...,
+      "style_per100_delta":..., "ppl_neutral_delta_pct":...}
+     ```
+   * Also print an **ASCII table** sorted by best drop\_pct with side-effect filters applied.
+
+**Quick run (preview)**
+
+```bash
+# L24 attention, steer only, quick grid
+python -m mechdiff.experiments.rq3.run_rq3_causal \
+  --pair mechdiff/pairs/pair_cultural.py --layer 24 --hook attn_out \
+  --mode steer --k_list 1,2,4,8 --alpha_list 0.1,0.3,0.5,1.0 \
+  --subspace_file mechdiff/artifacts/rq3/subspaces/L24_attn_out_Uk.pt
+```
+
+---
+
+## Task 3 — Rank & minimal-k summary (with controls)
+
+**Why:** quantify “how many directions” matter and confirm specificity.
+
+1. From the JSON produced in Task 2, compute:
+
+   * **Minimal k\*** achieving **drop\_pct ≥ 20%** for some α with **ppl\_neutral\_delta ≤ 10%**.
+   * Report best (k, α) tuple and the drop%.
+2. **Controls**:
+
+   * **Early layer**: run the same grid at **L10/resid\_post**; expect weak/flat drops.
+   * **Random subspace**: draw a random orthonormal basis (d×k) and re-run a single (k=8, α=0.3) point at L24; expect near-zero drop.
+3. Save a small summary table to
+   `mechdiff/artifacts/rq3/rq3_rank_summary.txt`:
+
+   ```
+   Layer  Hook       Mode    best(k,α)  drop%  pplΔ%  note
+   L24    attn_out   steer   (4,0.3)    2x.x   <10    strong
+   L24    attn_out   ablate  (4,1.0)   -y.y   <10    opposite dir
+   L26    attn_out   steer   (..,..)    ...
+   L10    resid_post steer   (..,..)    ~0     ok control
+   L24    attn_out   random  (8,0.3)    ~0     ok control
+   ```
+
+**Commands (controls)**
+
+```bash
+# Early layer control
+python -m mechdiff.experiments.rq3.run_rq3_causal \
+  --pair mechdiff/pairs/pair_cultural.py --layer 10 --hook resid_post \
+  --mode steer --k_list 1,2,4,8 --alpha_list 0.3 \
+  --subspace_file mechdiff/artifacts/rq3/subspaces/L24_attn_out_Uk.pt  # (intentionally bogus or implement L10_Uk if you prefer)
+
+# Random subspace quick check (implement a --random flag or separate script)
+python -m mechdiff.experiments.rq3.run_rq3_causal \
+  --pair mechdiff/pairs/pair_cultural.py --layer 24 --hook attn_out \
+  --mode steer --k_list 8 --alpha_list 0.3 --random_subspace 1
+```
+
+---
+
+## Task 4 — One-pager artifacts for the report
+
+**Why:** make it effortless to paste into the journal.
+
+* Add `--ascii` flag to print:
+
+  * α×k **grid table** with `drop%`, `styleΔ`, `pplΔ%` (filtered by pplΔ%≤10%).
+  * A **rank plot** saved as `rq3_rank_L{L}_{hook}.txt` (ASCII bar lengths from drop%).
+* Save a small JSON `rq3_topline.json`:
+
+  ```json
+  {
+    "L24/attn_out": {"mode":"steer","best_k":4,"alpha":0.3,"drop_pct": 29.0,"ppl_neutral_delta_pct": 4.2},
+    "L26/attn_out": {...},
+    "L10/resid_post": {...}
+  }
+  ```
+
+---
+
+## Defaults to hard-code (so it “just runs”)
+
+* Prompts: reuse `mechdiff/data/rq2/train_prompts.jsonl` (subspace) and `val_prompts.jsonl` (evaluation).
+* Decision point: **K=1** last content token (identical to RQ2).
+* Hooks: start with **L24 / attn\_out**, then **L26 / attn\_out**; optionally `resid_post`.
+* α grid: `0.1,0.3,0.5,1.0`; k grid: `1,2,4,8,16`.
+* Perplexity side-set: small fixed English neutral slice (cache ids).
+
+---
+
+## What to paste in the report (once done)
+
+* “Steering the **L24 attention subspace** by projecting onto the top-k directions derived from `(H_tuned − H_base)` reduces next-token KL to tuned by **≥20–30%** with **k ≤ 4–8** and **α ≈ 0.3–0.5**, while perplexity on a neutral set changes by **≤10%**.
+  Ablation shows the opposite trend. Early-layer and random-subspace controls exhibit near-zero effect.”
+
+---
+
+If you want, I can also draft a tiny `random_subspace(d,k)` helper and the ASCII table formatter signature for you to implement 1:1.
