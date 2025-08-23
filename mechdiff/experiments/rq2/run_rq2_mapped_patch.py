@@ -28,6 +28,7 @@ def main():
     ap.add_argument("--map_file", required=True, help="Path to map bundle (.pt) or CLT JSON with map_path")
     ap.add_argument("--hook", default="resid_post")
     ap.add_argument("--k1_decision", action="store_true")
+    ap.add_argument("--split", default="val", choices=["train","val"], help="Evaluate on train or val prompts")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = ap.parse_args()
 
@@ -39,8 +40,10 @@ def main():
         map_path = meta.get("map_path", map_path)
     bundle = torch.load(map_path, map_location="cpu")
 
-    layer = bundle.get("layer") or meta.get("layer") if meta else args.layer
-    hook = args.hook or bundle.get("hook", "resid_post")
+    # Use the requested target layer/hook for patching to support cross-layer tests (e.g., bogus L24→L10)
+    map_layer = (bundle.get("layer") if isinstance(bundle, dict) else None) or (meta.get("layer") if meta else None)
+    layer = args.layer
+    hook = args.hook
 
     pair = load_pair(args.pair)
     base_id, tuned_id = pair["base_id"], pair["tuned_id"]
@@ -50,8 +53,8 @@ def main():
 
     # data
     rq2_dir = os.path.join("mechdiff", "data", "rq2")
-    va_prompts_path = os.path.join(rq2_dir, "val_prompts.jsonl")
-    with open(va_prompts_path, "r", encoding="utf-8") as f:
+    prompts_path = os.path.join(rq2_dir, f"{args.split}_prompts.jsonl")
+    with open(prompts_path, "r", encoding="utf-8") as f:
         prompts = [json.loads(l).get("text") for l in f if l.strip()]
 
     def last_content_index(tok, chat):
@@ -137,17 +140,23 @@ def main():
     res = {
         "layer": layer,
         "hook": hook,
+        "split": args.split,
         "k_positions": 1 if args.k1_decision else None,
         "n": len(KL_raw),
         "KL_raw_mean": float(sum(KL_raw)/max(1,len(KL_raw))) if KL_raw else None,
         "KL_mapped_mean": float(sum(KL_mapped)/max(1,len(KL_mapped))) if KL_mapped else None,
         "reduction": None,
+        "map_layer": map_layer,
+        "solver": solver,
+        "alpha": float(alpha) if isinstance(alpha, (int, float)) else alpha,
+        "map_file": map_path,
     }
     if KL_raw and KL_mapped:
         res["reduction"] = float(res["KL_raw_mean"] - res["KL_mapped_mean"])
-    with open(os.path.join(out_dir, f"mapped_patch_L{layer}.json"), "w", encoding="utf-8") as f:
+    suffix = f"_{args.split}" if args.split in ("train","val") else ""
+    with open(os.path.join(out_dir, f"mapped_patch_L{layer}{suffix}.json"), "w", encoding="utf-8") as f:
         json.dump(res, f, ensure_ascii=False, indent=2)
-    print("Saved mapped_patch results:", res)
+    print("Saved mapped_patch results (split=", args.split, "):", res)
 
 
 if __name__ == "__main__":

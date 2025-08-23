@@ -100,6 +100,7 @@ def main():
     ap.add_argument("--k1_decision", action="store_true")
     ap.add_argument("--alphas", default="0.3,0.5,0.7,1.0")
     ap.add_argument("--map", default="", help="Path to .pt map bundle; if empty, pick latest JSON's map_path for layer")
+    ap.add_argument("--split", default="val", choices=["train","val"], help="Which split to evaluate (no retrain)")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = ap.parse_args()
 
@@ -131,9 +132,10 @@ def main():
 
     # Data
     rq2_dir = os.path.join("mechdiff", "data", "rq2")
-    va_prompts_path = os.path.join(rq2_dir, "val_prompts.jsonl")
+    pfile = "val_prompts.jsonl" if args.split=="val" else "train_prompts.jsonl"
+    prompts_path = os.path.join(rq2_dir, pfile)
     prompts = []
-    with open(va_prompts_path, "r", encoding="utf-8") as f:
+    with open(prompts_path, "r", encoding="utf-8") as f:
         for line in f:
             try:
                 obj = json.loads(line)

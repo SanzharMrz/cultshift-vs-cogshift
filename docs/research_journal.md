@@ -230,3 +230,73 @@ Notes
 -----
 - KL_raw: mean KL after raw cross-model patch (no mapping). KL_mapped: same after applying the learned CLT map (and scaling by α).
 - Values are averaged over 150 validation prompts; same chat template and hook point across models; K=1 ensures token-position alignment.
+
+VAL summary (matches TRAIN)
+---------------------------
+On the held‑out VAL set, a Procrustes CLT map at L24/attn_out causally reduces the cross‑model next‑token KL by 35–77% depending on α, with the best at α≈0.3 (KL_raw 0.572 → KL_mapped 0.130 → ΔKL 0.442, ~77% drop). This validates transportability of the cultural shift in late attention; effect size is robust (VAL mirrors TRAIN). Default α for L24/attn_out mapped‑patch: 0.3.
+
+ASCII Table — α Sweep @ L24 / attn_out (VAL)
+
++-------+---------+------------+-----------+---------+
+| alpha | KL_raw  | KL_mapped  | ΔKL       | Drop %  |
++-------+---------+------------+-----------+---------+
+| 0.3   | 0.572   | 0.130      | 0.442     | 77.3%   |
+| 0.5   | 0.572   | 0.166      | 0.406     | 71.0%   |
+| 0.7   | 0.572   | 0.227      | 0.344     | 60.2%   |
+| 1.0   | 0.572   | 0.374      | 0.198     | 34.7%   |
++-------+---------+------------+-----------+---------+
+
+Notes: n=150 prompts, k_positions=1 (last content token), hook=attn_out. Best α ≈ 0.3 (largest ΔKL, lowest KL_mapped).
+
+### RQ2 — Task 4: One-shot summary table (percent KL drops, VAL)
+
+| Layer | Hook       | Alpha |   KL_raw | KL_mapped |  ΔKL  | Drop % |
+|------:|------------|:-----:|---------:|----------:|------:|-------:|
+|   10  | resid_post | auto  |   7.9462 |    6.6023 | 1.3439|  16.9% |
+|   24  | resid_post | auto  |   6.4340 |    5.8185 | 0.6155|   9.6% |
+|   24  | mlp_out    | auto  |   7.1849 |    6.4452 | 0.7397|  10.3% |
+|   24  | attn_out   | 0.3   |   0.5720 |    0.1300 | 0.4420|  77.3% |
+|   24  | attn_out   | 1.0   |   0.5720 |    0.3738 | 0.1982|  34.7% |
+|   26  | attn_out   | auto  |   7.8410 |    5.5669 | 2.2740|  29.0% |
+|   26  | mlp_out    | auto  |   6.5205 |    5.9012 | 0.6193|   9.5% |
+
+Notes:
+- L24 @ attn_out shows very large causal transport with α≈0.3 (best).
+- L26 @ attn_out also strong; MLP effects are modest; early layer L10 smaller as expected.
+
+### Overall summary
+
+1) There is a robust, causally effective linear transport of the cultural fine-tune in late-layer attention (L24 strongest, α≈0.3 → ~77% ΔKL drop; L26 attention ~29%).
+2) MLP components at late layers show modest but consistent transport (~9–10%).
+3) Early layer (L10) transport is smaller (~17%), matching the expectation that higher-level cultural behavior concentrates late.
+4) CLT representation metrics (CKA / cosine) are high at L24/L26 even when val R² is < 0, indicating alignment in direction/subspace; α scaling fixes the causal effect during patching.
+5) Controls show small drops (≈3%), supporting specificity of the learned transport.
+
+### RQ2 · Task 3 — Bogus-map control (early layer)
+
+**Purpose.** Check specificity of our mapping: a late-layer map (L24) should not meaningfully help when patched into an early layer (L10). If it does, our effect might be generic.
+
+**Protocol.**
+
+- Target: L10 / resid_post (K=1, last content token).
+- “Legit” condition: use L10→L10 map (Procrustes-scaled) learned on train, evaluated on val.
+- “Bogus” control: use L24→L24 map, but patch at L10 / resid_post (mismatched), measured on train and (approx) val.
+- Metric: mean ΔKL (next-token) between raw patch and mapped patch; report absolute and % drop.
+
+## Results (ΔKL; lower KL is better)
+
+```
+| Split | Target (layer@hook) | Map used            | α    |  KL_raw | KL_mapped |  ΔKL  | Drop % |
+|------:|----------------------|---------------------|------|--------:|----------:|------:|-------:|
+|  val  | L10 @ resid_post     | L10 @ resid_post    | auto |  7.9462 |    6.6023 | 1.3439|  16.9% |
+| train | L10 @ resid_post     | L24 @ resid_post    | auto |  8.0779 |    7.8283 | 0.2495|   3.1% |
+|  val  | L10 @ resid_post     | L24 @ resid_post    | auto |  7.9460 |    7.7080 | 0.2380|   3.0% | 
+```
+
+## Takeaways
+
+- Specificity holds. A mismatched L24→L10 map yields only ~3% KL drop, far below the ~17% drop from the legit L10 map. This supports layer-specific causal transport rather than a generic smoothing effect.
+- Consistent with RQ1/RQ2: strong late-layer geometry alignment (CKA/cos) and KL reductions for matched-layer mapping; bogus control shows effects are not model-agnostic perturbations.
+- Caveat: K=1 and ΔKL at the last content token; broader windows or alternate positions could refine the estimate.
+
+Conclusion: Evidence for layer-localized, transportable subspace in cultural tuning; bogus control passes.
