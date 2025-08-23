@@ -188,18 +188,16 @@
 
 Using fairness-aware Kazakh prompts and K=1 (last content token), we find strong representational divergence in late layers (CKA≈0.34 at L24). A simple linear cross-layer transport (Procrustes‑scaled with shrinkage) yields high mapped-to-tuned similarity (CKA≈0.64–0.66) at L24–L26. Crucially, when we causally patch the base model with mapped activations, the next-token KL to the tuned model drops by ~10–13% on resid_post, by ~10% on mlp_out@L24, and by ~29% on attn_out@L26. attn_out@L24 is unstable (negative unless re‑scaled), indicating attention changes are layer‑localized, while MLP shows consistent late‑layer shifts. An early-layer control (L10) also shows ΔKL reduction (~17%), which we flag for shuffle‑control validation (likely a global rotation/scale rather than culture-specific circuitry). Overall, cultural fine‑tuning appears as a late‑layer subspace re‑orientation with significant MLP and layer‑specific attention components that are partly transferable by a linear map.
 
-### Update — Task 1 (L26 MLP split)
+### Task 1 (L26 MLP split)
 
 RQ2 (CLT, cultural pair): At L26/attn_out we previously saw a ~29% KL drop; at L26/mlp_out we now get a ~9.5% KL drop; L10/resid_post gives ~17% drop. L24/attn_out is negative without α tuning; next we sweep α to test scale sensitivity. Overall, late layers show non‑trivial, directionally consistent linear transport, with largest causal impact in attention at L26 and solid, but smaller, effect in MLP.
 
-### Update — Task 2 (α sweep @ L24 / attn_out)
+### Task 2 (α sweep @ L24 / attn_out)
 
-============================================================
 RQ2 — Cross-Model Linear Transport (CLT) Mapped-Patch Sweep
 Setup: pair_cultural (base ↔ tuned), Layer L24, hook=attn_out, K=1 (last content token),
 val set n=150 prompts (Kazakh cultural free-form), Procrustes-scaled map with shrink=0.05.
 Metric: mean next-token KL divergence between patched vs. unpatched logits.
-============================================================
 
 ASCII Table — α Sweep @ L24 / attn_out
 --------------------------------------
