@@ -12,3 +12,4 @@ matplotlib
 pandas
 hf_transfer
 tqdm
+load_dotenv
