@@ -1,0 +1,11 @@
+{
+  "layer": 24,
+  "hook": "resid_post",
+  "alpha": 0.3,
+  "KL_raw_mean": 6.433974396387736,
+  "KL_mapped_mean": 6.09250616868337,
+  "reduction": 0.34146822770436636,
+  "drop_pct": 5.3072674317149735,
+  "source_file": "mapped_patch_L24_val.json",
+  "timestamp": "2025-08-26T11:10:47"
+}

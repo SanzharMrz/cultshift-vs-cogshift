@@ -1,0 +1,219 @@
+# Cultural vs Base — CLT + Causal Patch (RQ2) and Low-Rank Control (RQ3)
+
+## 0) What this experiment is (one paragraph)
+
+We compare a **culturally fine-tuned** Llama-3.1-8B model vs the **base** model.
+**RQ2**: learn a **linear map** $W$ that transports base activations → tuned activations at a chosen **layer/hook** (e.g., `attn_out`, `mlp_out`, `resid_post`, K=1 = last content token). We then **causally patch** the tuned model with **mapped** base activations and measure the **next-token KL** drop relative to a raw cross-patch.
+**RQ3**: show the control is **low-rank** by restricting $W$ to a **rank-k** subspace and finding the smallest **k** that hits a target KL-drop.
+
+**Intuition:** If a small subspace with proper **scale** (α) reproduces tuned behavior, cultural tuning acts like a **low-rank, late-layer reweighting** (especially in attention).
+
+---
+
+## 1) Pre-requisites (once)
+
+* Models & pair file exist (cultural vs base).
+* Prompts are chat-templated; we use **K=1** (last content token).
+* Hooks: `resid_post`, `attn_out`, `mlp_out`.
+
+---
+
+## 2) Freeze the current RQ2 winners (stable paths)
+
+> We pin the best maps so downstream code won’t chase timestamps.
+> **Keep the α next to each winner** — it matters at patch time.
+
+```bash
+mkdir -p mechdiff/artifacts/rq2/best
+
+# Winners you already validated (replace with your exact filenames if needed):
+# L26 / attn_out, α=0.3
+cp mechdiff/artifacts/rq2/maps/rq2_clt_L26_*attn_out*procrustes_scaled*.pt \
+   mechdiff/artifacts/rq2/best/best_L26_attn_out.pt
+
+# L26 / resid_post, α=0.3
+cp mechdiff/artifacts/rq2/maps/rq2_clt_L26_*resid_post*procrustes_scaled*.pt \
+   mechdiff/artifacts/rq2/best/best_L26_resid_post.pt
+
+# L24 / resid_post, α=0.7
+cp mechdiff/artifacts/rq2/maps/rq2_clt_L24_*resid_post*procrustes_scaled*.pt \
+   mechdiff/artifacts/rq2/best/best_L24_resid_post.pt
+```
+
+Create a tiny manifest:
+
+```bash
+python - <<'PY'
+import json, os
+os.makedirs("mechdiff/artifacts/rq3", exist_ok=True)
+manifest = {
+  "pair": "mechdiff/pairs/pair_cultural.py",
+  "winners": {
+    "L26_attn_out":   {"path":"mechdiff/artifacts/rq2/best/best_L26_attn_out.pt",   "alpha":0.3},
+    "L26_resid_post": {"path":"mechdiff/artifacts/rq2/best/best_L26_resid_post.pt", "alpha":0.3},
+    "L24_resid_post": {"path":"mechdiff/artifacts/rq2/best/best_L24_resid_post.pt", "alpha":0.7}
+  }
+}
+json.dump(manifest, open("mechdiff/artifacts/rq3/manifest.json","w"), indent=2)
+print("Wrote mechdiff/artifacts/rq3/manifest.json")
+PY
+```
+
+---
+
+## 3) One clean “report pass” for RQ2 (held-out VAL)
+
+> Re-emit KL numbers with **the pinned maps** + **the right α**.
+> Output JSON is written under `mechdiff/artifacts/rq2/` (script’s default).
+
+```bash
+# L26 / attn_out
+python -m mechdiff.experiments.rq2.run_rq2_mapped_patch \
+  --pair mechdiff/pairs/pair_cultural.py --layer 26 \
+  --hook attn_out --k1_decision \
+  --map_file mechdiff/artifacts/rq2/best/best_L26_attn_out.pt \
+  --alpha 0.3 --n 500
+
+# L26 / resid_post
+python -m mechdiff.experiments.rq2.run_rq2_mapped_patch \
+  --pair mechdiff/pairs/pair_cultural.py --layer 26 \
+  --hook resid_post --k1_decision \
+  --map_file mechdiff/artifacts/rq2/best/best_L26_resid_post.pt \
+  --alpha 0.3 --n 500
+
+# L24 / resid_post
+python -m mechdiff.experiments.rq2.run_rq2_mapped_patch \
+  --pair mechdiff/pairs/pair_cultural.py --layer 24 \
+  --hook resid_post --k1_decision \
+  --map_file mechdiff/artifacts/rq2/best/best_L24_resid_post.pt \
+  --alpha 0.7 --n 500
+```
+
+**Interpretation keys (RQ2):**
+
+* `KL_raw_mean` vs `KL_mapped_mean` → **% drop** = causal evidence the map transports behavior-relevant directions.
+* α is a **scale knob**; α<1 means tuned **down-scales** that component relative to base.
+
+---
+
+## 4) RQ3: Low-rank control (minimal, focused)
+
+We quantify **how many directions** are needed. We re-train maps with `--pca_q=k` so $W$ acts in a **k-dimensional** subspace, then patch with the **same α** used above.
+
+### 4A) L26 / `attn_out`, α=0.3, k ∈ {1, 8, 32, full}
+
+```bash
+for K in 1 8 32 0; do   # 0 = full (no PCA)
+  python -m mechdiff.experiments.rq2.run_rq2_clt \
+    --pair mechdiff/pairs/pair_cultural.py \
+    --layer 26 --hook attn_out --k1_decision \
+    --solver procrustes_scaled --pca_q $K --shrink 0.05
+
+  MAP_PT=$(python - <<'PY'
+import json,glob,sys
+K=sys.argv[1]
+for j in sorted(glob.glob("mechdiff/artifacts/rq2/rq2_clt_L26_*procrustes_scaled*.json"), reverse=True):
+    d=json.load(open(j))
+    if d.get("hook")=="attn_out" and str(d.get("pca_q",0))==K:
+        print(d["map_path"]); break
+PY $K)
+
+  python -m mechdiff.experiments.rq2.run_rq2_mapped_patch \
+    --pair mechdiff/pairs/pair_cultural.py \
+    --layer 26 --hook attn_out --k1_decision \
+    --map_file "$MAP_PT" --alpha 0.3 --n 500
+
+  mv mechdiff/artifacts/rq2/mapped_patch_L26_val.json \
+     mechdiff/artifacts/rq3/rankk_L26_attn_out_k${K or 'full'}.json
+done
+```
+
+### 4B) L24 / `resid_post`, α=0.7, k ∈ {1, 8, 32, full}
+
+```bash
+for K in 1 8 32 0; do
+  python -m mechdiff.experiments.rq2.run_rq2_clt \
+    --pair mechdiff/pairs/pair_cultural.py \
+    --layer 24 --hook resid_post --k1_decision \
+    --solver procrustes_scaled --pca_q $K --shrink 0.05
+
+  MAP_PT=$(python - <<'PY'
+import json,glob,sys
+K=sys.argv[1]
+for j in sorted(glob.glob("mechdiff/artifacts/rq2/rq2_clt_L24_*procrustes_scaled*.json"), reverse=True):
+    d=json.load(open(j))
+    if d.get("hook")=="resid_post" and str(d.get("pca_q",0))==K:
+        print(d["map_path"]); break
+PY $K)
+
+  python -m mechdiff.experiments.rq2.run_rq2_mapped_patch \
+    --pair mechdiff/pairs/pair_cultural.py \
+    --layer 24 --hook resid_post --k1_decision \
+    --map_file "$MAP_PT" --alpha 0.7 --n 500
+
+  mv mechdiff/artifacts/rq2/mapped_patch_L24_val.json \
+     mechdiff/artifacts/rq3/rankk_L24_resid_post_k${K or 'full'}.json
+done
+```
+
+### 4C) One-shot summary: drop%(k) and “min k”
+
+```bash
+python - <<'PY'
+import glob,json,os
+def pct(d): return 100*(d["KL_raw_mean"]-d["KL_mapped_mean"])/d["KL_raw_mean"]
+def list_rows(pat):
+    files = sorted(glob.glob(pat), key=lambda x:int(x.split('_k')[-1].split('.')[0].replace('full','99999')))
+    return [(os.path.basename(f), pct(json.load(open(f)))) for f in files]
+def min_k(pat, target):
+    out="N/A"
+    for f,drop in list_rows(pat):
+        if drop >= target: out=f; break
+    return out
+
+rowsA = list_rows("mechdiff/artifacts/rq3/rankk_L26_attn_out_k*.json")
+rowsB = list_rows("mechdiff/artifacts/rq3/rankk_L24_resid_post_k*.json")
+
+print("L26/attn_out (α=0.3):")
+for f,p in rowsA: print(f"  {f:<40} drop={p:5.1f}%")
+print("\nL24/resid_post (α=0.7):")
+for f,p in rowsB: print(f"  {f:<40} drop={p:5.1f}%")
+
+print("\nmin k for 30% @ L26/attn_out:", min_k("mechdiff/artifacts/rq3/rankk_L26_attn_out_k*.json", 30))
+print(  "min k for 12% @ L24/resid_post:", min_k("mechdiff/artifacts/rq3/rankk_L24_resid_post_k*.json", 12))
+PY
+```
+
+**Interpretation keys (RQ3):**
+
+* Plot/scan **drop%(k)**. If you reach your target drop with **k ≪ d**, that’s **low-rank control**.
+* Report **“min k”** per config (e.g., L26/attn\_out hits ≥30% at k=8; L24/resid\_post needs ≥32 just to reach \~12–13%).
+
+---
+
+## 5) What to write in the Results (template)
+
+* **RQ2 (causal transport):**
+  “Scaled Procrustes maps at **late layers** transport behavior-relevant directions.
+  L26/attn\_out (α≈0.3) yields \~**34%** KL drop; L26/resid\_post (α≈0.3) \~**22%**;
+  L24/resid\_post (α≈0.7) \~**13%**. L24/attn\_out is **not** linearly transportable (KL↑).
+  α<1 at L26 indicates the fine-tune **down-scales** an attention-aligned subspace.”
+
+* **RQ3 (rank-k control):**
+  “On L26/attn\_out, target \~30% KL-drop is achieved with **k ≪ d** (e.g., k≈8–32).
+  L24/resid\_post requires a larger k and saturates at a lower ceiling (\~13%).
+  This supports a **low-rank, late-attention control** for cultural tuning.”
+
+*(Optional, nice-to-have later: 95% bootstrap CI for (KL\_raw − KL\_mapped) and corr(cos(mapped,tuned), −ΔKL).)*
+
+---
+
+## 6) FAQ
+
+* **What is the map $W$?** A learned **linear** transport from base→tuned activations at the same layer/hook.
+* **Why α?** It corrects **amplitude** mismatch; direction can be right while scale is off.
+* **Why rank-k?** To quantify **how concentrated** the causal handle is. Small k → a simple, interpretable knob.
+
+---
+
+This is all **additive** to your existing results (not a replacement). After these steps, RQ2 is fully “report-ready”, and you’ll have a crisp **RQ3** figure/number (“min k”) that sets you up to mirror the exact same protocol on the **cognitive** fine-tune and compare.

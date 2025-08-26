@@ -1,0 +1,14 @@
+{
+  "layer": 24,
+  "hook": "resid_post",
+  "split": "val",
+  "k_positions": 1,
+  "n": 150,
+  "KL_raw_mean": 6.436596194903056,
+  "KL_mapped_mean": 5.637970811525981,
+  "reduction": 0.7986253833770753,
+  "map_layer": 24,
+  "solver": "procrustes_scaled",
+  "alpha": 0.7,
+  "map_file": "mechdiff/artifacts/rq2/maps/rq2_clt_L24_resid_post_procrustes_scaled_20250826_134637.pt"
+}

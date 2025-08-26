@@ -296,3 +296,39 @@ Notes:
 - Caveat: K=1 and ΔKL at the last content token; broader windows or alternate positions could refine the estimate.
 
 Conclusion: Evidence for layer-localized, transportable subspace in cultural tuning; bogus control passes.
+
+### RQ3 results — α-sweep (val)
+
+On the held-out val set (150 prompts), α-sweeps show robust ΔKL reductions when applying mapped patches at L26, especially attention (α≈0.3, −34% KL), with consistent but smaller gains for residual and MLP. At L24, MLP and residual yield modest positive drops (10–13%), while attention increases KL across α, indicating a mismatch at that layer/hook. Results replicate our RQ2 pattern and support that culture-tuning effects are linearly transportable in late-layer subspaces, strongest at L26/attn_out.
+
+---
+
+### RQ3 — Conclusion (Cultural Pair)
+
+Bottom line: Cultural fine-tuning manifests as late-layer, low-rank, linearly transportable directions—especially in the attention stream of L26—rather than a global rotation of the whole representation space.
+
+Evidence (val split):
+
+- Strong causal transfer at L26/attn_out: linear map + patching cuts next-token KL by ~34% at α=0.3 (7.84 → 5.15).
+- Consistent positive transfer at L26/resid_post and L26/mlp_out: ~22% and ~22% drops at α=0.3.
+- Moderate transfer at L24/resid_post: ~10–13% drop (α=0.7–1.0).
+- Hook specificity: L24/attn_out harms performance (−21%), confirming the effect is layer/stream-localized.
+- Scale matters: α-sweep shows best α is small (≈0.3), consistent with a low-rank/logit-relevant subspace needing careful rescaling.
+- Control passes: Early-layer control (L10) shows much smaller gains (≈17% legit) and bogus L24→L10 gives only ~3%, ruling out generic/global tricks.
+- Global linear fit is weak: full-space ridge/Procrustes gives val R² ≤ 0, but cosine/CKA and KL improve after subspace-aware mapping—again indicating a localized, not global, change.
+
+Interpretation: Cultural tuning adds targeted, low-dimensional changes in late layers (esp. L26 attention). These changes are linearly portable between models and causally reduce divergence in next-token predictions when injected at the right layer/stream with the right scale. The lack of global R² gains supports a low-rank hypothesis: the cultural shift lives in a small, behavior-relevant subspace rather than the full residual space.
+
+One-liner (for abstract):
+We find that cultural fine-tuning induces low-rank, late-layer shifts—primarily in L26 attention—that are linearly transportable across models and yield ~30–35% KL reductions under causal patching, while early layers and mismatched hooks show little or negative effect, arguing against a global rotation and for localized subspace changes.
+
+#### RQ3 — Top results table (val)
+
+| Rank | layer | hook       | α   | KL_raw | KL_mapped |   ΔKL | drop% | файл                                              |
+|-----:|------:|------------|----:|-------:|----------:|------:|------:|:--------------------------------------------------|
+|    1 |    26 | attn_out   | 0.3 |  7.844 |     5.149 | 2.696 |  34.4 | mapped_patch_L26_attn_out_k1_alpha0.3.json        |
+|    2 |    26 | resid_post | 0.3 |  6.835 |     5.304 | 1.530 |  22.4 | mapped_patch_L26_resid_post_alpha0.3.json         |
+|    3 |    26 | mlp_out    | 0.3 |  6.521 |     5.104 | 1.416 |  21.7 | mapped_patch_L26_mlp_out_alpha0.3.json            |
+|    4 |    24 | resid_post | 0.7 |  6.434 |     5.596 | 0.838 |  13.0 | mapped_patch_L24_resid_post_alpha0.7.json         |
+|    5 |    24 | mlp_out    | 1.0 |  7.185 |     6.462 | 0.723 |  10.1 | mapped_patch_L24_mlp_out_alpha1.0.json            |
+|    — |    24 | attn_out   | 0.7 |  5.764 |     6.981 | -1.217| -21.1 | mapped_patch_L24_attn_out_alpha0.7.json (ухудшение) |

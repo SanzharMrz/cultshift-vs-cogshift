@@ -1,0 +1,21 @@
+{
+  "layer": 24,
+  "n_train": 450,
+  "n_val": 150,
+  "k_positions": 1,
+  "val_r2": -0.2776,
+  "train_r2": 0.9981,
+  "r2_shuffled": -0.2847,
+  "lam": null,
+  "solver": "procrustes_scaled",
+  "pca_q": 0,
+  "logit_subspace": "0",
+  "cka_mapped_vs_tuned_val": 0.6586,
+  "cos_stats": {
+    "mean": 0.6469949947794279,
+    "median": 0.659089207649231,
+    "p10": 0.517787516117096,
+    "p90": 0.7640191316604614
+  },
+  "map_path": "mechdiff/artifacts/rq2/maps/rq2_clt_L24_procrustes_scaled_20250826_110033.pt"
+}

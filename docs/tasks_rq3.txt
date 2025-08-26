@@ -1,7 +1,5 @@
 Got it—here’s a tight plan for **RQ3: Causal Control & Rank** plus clear, “Cursor-ready” instructions.
 
----
-
 # RQ3 — Next Steps (what we’re testing)
 
 Goal: find a small late-layer **subspace** that causally controls the cultural shift, and measure how many directions (**k**) are needed to move the **base** model toward the **tuned** one—while keeping side-effects small.
@@ -169,6 +167,3 @@ python -m mechdiff.experiments.rq3.run_rq3_causal \
 * “Steering the **L24 attention subspace** by projecting onto the top-k directions derived from `(H_tuned − H_base)` reduces next-token KL to tuned by **≥20–30%** with **k ≤ 4–8** and **α ≈ 0.3–0.5**, while perplexity on a neutral set changes by **≤10%**.
   Ablation shows the opposite trend. Early-layer and random-subspace controls exhibit near-zero effect.”
 
----
-
-If you want, I can also draft a tiny `random_subspace(d,k)` helper and the ASCII table formatter signature for you to implement 1:1.

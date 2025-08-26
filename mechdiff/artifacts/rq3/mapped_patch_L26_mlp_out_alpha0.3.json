@@ -1,0 +1,11 @@
+{
+  "layer": 26,
+  "hook": "mlp_out",
+  "alpha": 0.3,
+  "KL_raw_mean": 6.520505119959513,
+  "KL_mapped_mean": 5.104317957560221,
+  "reduction": 1.416187162399292,
+  "drop_pct": 21.718979378825875,
+  "source_file": "mapped_patch_L26_val.json",
+  "timestamp": "2025-08-26T11:33:35"
+}

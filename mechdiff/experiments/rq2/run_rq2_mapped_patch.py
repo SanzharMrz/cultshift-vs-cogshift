@@ -30,6 +30,7 @@ def main():
     ap.add_argument("--k1_decision", action="store_true")
     ap.add_argument("--split", default="val", choices=["train","val"], help="Evaluate on train or val prompts")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    ap.add_argument("--alpha", type=float, default=None, help="Optional scale override applied to mapped states")
     args = ap.parse_args()
 
     meta = None
@@ -97,7 +98,7 @@ def main():
     mu_t = bundle.get("mu_t"); sd_t = bundle.get("sd_t")
     solver = bundle.get("solver", "ridge")
     W = bundle.get("W")
-    Q = bundle.get("Q"); s = bundle.get("s", 1.0); alpha = bundle.get("alpha", 1.0)
+    Q = bundle.get("Q"); s = bundle.get("s", 1.0); alpha_bundle = bundle.get("alpha", 1.0)
     Cb_invh = bundle.get("Cb_invh"); Ct_h = bundle.get("Ct_h")
 
     for p in prompts[:150]:
@@ -123,11 +124,18 @@ def main():
             zb = (h_b - mu_b) / (sd_b + 1e-6)
             zhat = zb @ W
             h_map = zhat * sd_t + mu_t
+            # Optional external scaling override
+            if args.alpha is not None:
+                h_map = h_map * float(args.alpha)
         elif solver == "procrustes_scaled" and all(x is not None for x in [Cb_invh, Ct_h, Q]):
             xb = (h_b - mu_b) @ Cb_invh
             yhat_w = (xb @ Q) * float(s)
             h_map = yhat_w @ Ct_h + mu_t
-            h_map = h_map * float(alpha)
+            # Apply provided --alpha if set; otherwise use bundle alpha
+            if args.alpha is not None:
+                h_map = h_map * float(args.alpha)
+            else:
+                h_map = h_map * float(alpha_bundle)
         else:
             h_map = None
         if h_map is not None:
@@ -148,7 +156,7 @@ def main():
         "reduction": None,
         "map_layer": map_layer,
         "solver": solver,
-        "alpha": float(alpha) if isinstance(alpha, (int, float)) else alpha,
+        "alpha": float(args.alpha) if args.alpha is not None else float(alpha_bundle) if isinstance(alpha_bundle, (int, float)) else alpha_bundle,
         "map_file": map_path,
     }
     if KL_raw and KL_mapped:

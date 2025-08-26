@@ -1,0 +1,153 @@
+# RQ3 — Causal Transfer Tuning & Safety (single, self-contained plan)
+
+## 1) Goal (what we’re testing)
+
+Quantify **how much** of the cultural/behavioral shift in the tuned model can be **causally transferred** into the base model via a **linear map** learned at late layers, while **limiting side-effects**. We’ll tune a single scale parameter **α** over the mapped residual/stream and pick the best trade-off.
+
+**Primary success metric:** reduction in next-token **ΔKL** (raw vs mapped-patch) on **val** prompts at the hooked token(s).
+**Safety checks:** tiny changes in refusal proxy and Δlog-prob(correct) on a small MC slice (same as RQ1 behavior).
+
+---
+
+## 2) Inputs (reuse from RQ2)
+
+* **Pair**: `mechdiff/pairs/pair_cultural.py` (base vs cultural-tuned).
+* **Prompts & positions**: `mechdiff/data/rq2/{train,val}_prompts.jsonl` and `{train,val}_positions.json` (K=1, last content token).
+* **Hooks/Layers to test (small grid):**
+
+  * Layers: **24, 26** (late), plus **10** as an early-layer control.
+  * Hooks: **resid\_post**, **attn\_out**, **mlp\_out** (component split).
+* **Maps**: Use **Procrustes-scaled (whiten→rotate→scale→color)** with shrinkage (γ≈0.05) as in RQ2.
+
+  * If a map already exists for a (layer,hook), reuse it; otherwise train it once on **train** and evaluate on **val**.
+
+---
+
+## 3) Procedure (minimal, reproducible)
+
+### A. Train or reuse maps (one-time per (layer,hook))
+
+For each `(L, hook)` you’ll test in RQ3:
+
+```bash
+python -m mechdiff.experiments.rq2.run_rq2_clt \
+  --pair mechdiff/pairs/pair_cultural.py \
+  --layer L --hook HOOK \
+  --k1_decision --solver procrustes_scaled --shrink 0.05 --alpha auto
+```
+
+This writes a map file path in the JSON (`map_path` under `mechdiff/artifacts/rq2/maps/...pt`). Keep it.
+
+### B. α-sweep mapped-patch (val split)
+
+For each `(L, hook)`, sweep a **small** α grid and record ΔKL (mapped vs raw) on **val**:
+
+```bash
+python - <<'PY'
+import glob, json, os, subprocess, shlex
+PAIR="mechdiff/pairs/pair_cultural.py"
+LAYER=24; HOOK="attn_out"         # change per run
+ALPHAS=[0.3,0.5,0.7,1.0]          # small grid
+# pick the latest map for (LAYER,HOOK)
+j = sorted(glob.glob(f"mechdiff/artifacts/rq2/rq2_clt_L{LAYER}_*{HOOK}*procrustes_scaled*.json"))[-1]
+MAP_PT = json.load(open(j))["map_path"]
+for a in ALPHAS:
+    cmd=f"""python -m mechdiff.experiments.rq2.run_rq2_mapped_patch \
+        --pair {PAIR} --layer {LAYER} --hook {HOOK} --k1_decision \
+        --map_file {shlex.quote(MAP_PT)} --alpha {a} --split val"""
+    subprocess.run(cmd, shell=True, check=True)
+PY
+```
+
+This produces one JSON per α under `mechdiff/artifacts/rq2/` with fields `{KL_raw_mean, KL_mapped_mean, reduction}`.
+
+### C. Side-effect checks (fast, val split)
+
+For the **best α** per `(L,hook)` (lowest `KL_mapped_mean`), run:
+
+```bash
+python -m mechdiff.experiments.rq1.run_rq1_behavior \
+  --pair mechdiff/pairs/pair_cultural.py \
+  --prompt_file mechdiff/data/rq2/val_prompts.jsonl \
+  --min_shared_ratio 0.0 --debug
+```
+
+Record:
+
+* `refusal_rate_*` deltas (masked & unmasked).
+* MC slice: `mc_dlogp_correct_mean_(masked|unmasked)`.
+  These should be **near zero** (|Δ| small). You can skip this when time-boxed; do it at least for the final chosen `(L,hook,α)`.
+
+### D. Controls (lightweight)
+
+* **Early-layer bogus map**: apply an L24 map to **L10/resid\_post** and verify ΔKL drop is **small** (already observed ≪ legit L10).
+* (Optional) **Shuffle**: if a `--shuffle` exists for CLT, run once to confirm R²≈0 and ΔKL≈0.
+
+---
+
+## 4) Small grid (keeps runs under control)
+
+* Layers × Hooks × α:
+
+  * Layers: **{24,26}** (plus **10** only for bogus/negative control)
+  * Hooks: **{resid\_post, attn\_out, mlp\_out}**
+  * α: **{0.3, 0.5, 0.7, 1.0}**
+* Total mapped-patch evals on **val**: **2 × 3 × 4 = 24** runs (fast).
+  (Plus 2–3 CLT trainings if you don’t already have maps; plus 1–2 side-effect checks.)
+
+---
+
+## 5) What to save (so I can interpret quickly)
+
+Have Cursor persist these files:
+
+* Per map: `mechdiff/artifacts/rq2/rq2_clt_L{L}_{HOOK}_procrustes_scaled_*.json` (contains `map_path`, `val_r2`, `cka_mapped_vs_tuned_val`, `cos_stats`, `R2_whitened`, `alpha(auto)`).
+* Per α run: `mechdiff/artifacts/rq2/mapped_patch_L{L}_{HOOK}_alpha{a}_*.json` (contains `KL_raw_mean`, `KL_mapped_mean`, `reduction`).
+* **One summary TXT**: `mechdiff/artifacts/rq3/rq3_summary.txt`:
+
+  * A compact table: `(layer, hook, α, KL_raw, KL_mapped, ΔKL, drop%)` per row (val split).
+  * Best row per (L,hook) and the **winner** overall.
+  * Side-effect lines (if run): `Δ refusal (pp)`, `Δ mc_dlogp (masked/unmasked)`.
+  * Control lines: bogus L24→L10 drop%.
+
+---
+
+## 6) How to report/interpret
+
+* Prefer rows with **large drop%** (≥ **30–50%**) and **small side-effects** (|Δ refusal| ≲ **1 pp**; `mc_dlogp` close to **0**).
+* If **attn\_out @ L24** wins at **α≈0.3** (your RQ2 result), we’ll note: *“A compact attention subspace in late layers suffices to transport behavior with minimal side-effects.”*
+* If **mlp\_out** dominates, we’ll emphasize style/content rewrite via MLP channels.
+* If only **resid\_post** works, we’ll frame it as a distributed late-layer shift.
+
+---
+
+## 7) One-shot helper to print the final table
+
+```bash
+python - <<'PY'
+import glob,json,os
+rows=[]
+for path in glob.glob("mechdiff/artifacts/rq2/mapped_patch_L*_*.json"):
+    d=json.load(open(path))
+    if "KL_mapped_mean" not in d: continue
+    drop = 100*(d["KL_raw_mean"]-d["KL_mapped_mean"])/max(1e-9,d["KL_raw_mean"])
+    rows.append((d["layer"], d.get("hook","?"), d.get("alpha","?"),
+                 d["KL_raw_mean"], d["KL_mapped_mean"], drop, os.path.basename(path)))
+rows.sort(key=lambda r:(r[0], r[1], float(r[2]) if r[2]!="?" else 9e9))
+w= max(len(r[-1]) for r in rows) if rows else 40
+print("RQ3 — α sweep summary (val)\n")
+print(f"{'file':<{w}}  layer hook        alpha   KL_raw   KL_mapped   Δ drop%")
+for L,h,a,kr,km,drop,name in rows:
+    print(f"{name:<{w}}  {L:>5} {h:<10} {a!s:>5}   {kr:7.3f}   {km:9.3f}   {kr-km:7.3f}  {drop:6.1f}")
+PY
+```
+
+---
+
+## 8) Stop conditions (when to call RQ3 “done”)
+
+* You have **at least one** `(L,hook,α)` with **≥30–50%** ΔKL drop on **val**, and
+* Side-effects are within thresholds (refusal/MC deltas tiny), and
+* Bogus/early controls don’t show comparable drops.
+* train on the 450, evaluate on the 150. Don’t collapse them.
+That’s it—compact, automatable, and aligned with the maps and scripts you already have.
