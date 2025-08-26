@@ -1,0 +1,104 @@
+Here’s a tight, research-grade plan for **RQ4** that spotlights your finding: a **low-rank, late-layer attention handle** (L26/`attn_out`, α≈0.3).
+
+---
+
+# RQ4 — Head-level structure of the low-rank handle
+
+## Goal & Hypothesis
+
+Show that the cultural shift at **L26 / `attn_out`** is **localized in a small set of attention heads** and aligns with the **rank-1** direction found in RQ3. Concretely, a few heads (≈1–4) should recover most of the causal ΔKL you get when patching all heads.
+
+## Setup (keep everything identical to RQ2/RQ3)
+
+* Prompts: your **VAL** split (same chat templating).
+* Token position: **K=1** (last content token).
+* Target site: **L26 / `attn_out`**, scale **α = 0.3**.
+* Controls: **L24 / `attn_out`** (negative; KL↑ before), **random head subsets**, and optionally **L10** early-layer.
+
+## Metrics you’ll report
+
+1. **Head attribution (grad×act)** per head at L26/`attn_out`.
+2. **Churn/Concentration**: fraction of heads above a threshold; **Gini**/entropy of head importance.
+3. **Cumulative top-k coverage**: % of full ΔKL recovered when patching only top-k heads (k ∈ {1,2,4,8}).
+4. **Specificity**: compare top-k vs random-k; verify L24/`attn_out` stays non-transportable.
+5. **Alignment with rank-1**: correlate each head’s importance and causal effect with its **projection on the RQ3 rank-1 direction**.
+
+---
+
+## Steps
+
+### A) Head attribution (diagnostic, no intervention)
+
+Compute **grad×act** (or equivalent attribution) at **L26 / `attn_out`** for the decision token:
+
+* For each head $h$, aggregate score:
+  $\text{score}_h = \mathbb{E}_{\text{batch}}\big[\sum ( \nabla \ell \odot \text{attn\_out}_h )\big]$
+  (cosine-style variants are fine too.)
+* Produce: ranked head list, bar plot of top-N; **churn** (share of heads above the 80th percentile); **Gini**.
+
+**Expectation:** a sharp head distribution (few heads dominate; high Gini / low entropy).
+
+### B) Causal top-k head patch (main evidence)
+
+Patching at **L26 / `attn_out`** with **head masks**:
+
+* Conditions:
+
+  * **top-1 / top-2 / top-4 / top-8** heads (by attribution rank), α=0.3.
+  * **random-k** baselines (k ∈ {1,2,4,8}; 3–5 random seeds; report mean±sd).
+  * **full-heads** reference (all heads at L26/`attn_out`), α=0.3.
+  * **negative control:** L24/`attn_out` (expect KL↑).
+* Metric: mean ΔKL = $\text{KL}_{\text{raw}} - \text{KL}_{\text{mapped}}$.
+
+**Success criterion:** top-k (k≤4) recovers **≥70–90%** of the full-heads ΔKL; random-k is clearly worse; L24/`attn_out` remains non-helpful.
+
+### C) Link to RQ3 rank-1 (bridging representation ↔ structure)
+
+Let **v** be the **rank-1** direction from your L26/`attn_out` map (k=1):
+
+* For each head, compute $\text{align}_h = \cos(\text{attn\_out}_h, v)$ (batch-averaged).
+* Report correlations:
+
+  * $\text{align}_h$ vs **attribution score**.
+  * $\text{align}_h$ vs **ΔKL from patching only that head**.
+
+**Success criterion:** positive, significant correlation (heads aligned with **v** are the ones that matter causally).
+
+### D) Side-effects & stability (light but convincing)
+
+* **Bootstrap** ΔKL for top-k (e.g., 500 resamples) → **95% CI** strictly > 0.
+* **Neutral prompts** (small non-cultural set): ensure top-k patch has **small logit drift** (ΔKL\_base small). Notes go in the paper as “minimal side-effects”.
+
+---
+
+## Artifacts to save
+
+* `artifacts/rq4/attr_L26_attn.json` — per-head scores + summary stats (churn, Gini).
+* `artifacts/rq4/patch_topk_L26_attn.json` — ΔKL for k ∈ {1,2,4,8}, random baselines, full-heads ref.
+* `artifacts/rq4/head_single_patch.csv` — per-head ΔKL when patching each head alone (for the correlation plots).
+* Plots:
+
+  * bar(top-N heads), cumulative **top-k coverage** curve,
+  * scatter **align vs attribution**, **align vs single-head ΔKL**,
+  * a small table comparing **top-k vs random-k vs full-heads**.
+
+---
+
+## Stop criteria (when RQ4 is “done”)
+
+* **Concentration:** clear head skew (e.g., top-2 or top-4 dominate; churn low; Gini high).
+* **Causal top-k:** top-k (k≤4) reaches ≥70–90% of full-heads ΔKL; random-k clearly underperforms.
+* **Alignment:** significant correlations with the **rank-1** direction.
+* **Controls:** L24/`attn_out` remains negative; neutral-set side-effects small.
+
+---
+
+## One-paragraph writeup (you can paste later)
+
+> “At **L26/attn\_out** we observe a **low-rank, head-localized** cultural handle. Grad×act shows a highly concentrated head importance profile (high Gini). Causally patching only the **top-k** heads (k≤4) reproduces **≥70–90%** of the full-heads ΔKL at α≈0.3, while random head subsets fail to do so and L24/`attn_out` remains non-transportable. Head importance and single-head causal effects correlate with each head’s **projection on the rank-1 direction** identified in RQ3. Together, this demonstrates that the cultural fine-tune acts as a **late-attention low-rank reweighting**, implemented by a small, identifiable set of heads.”
+
+---
+
+### (Optional tiny engineering note)
+
+If your patcher already supports per-head masking, great (e.g., a `--head_mask` like `3,7,12`). If not, add a mask right before concatenating heads at L26/`attn_out` and route only the selected heads through the **mapped** transport; keep others unpatched. Keep **α** fixed to 0.3 for all L26/`attn_out` runs to isolate head selection effects.
