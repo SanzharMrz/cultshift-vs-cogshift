@@ -1,9 +1,5 @@
 ### Research journal
 
-- Environment
-  - Verified CUDA availability; logged into Hugging Face.
-  - Installed `hf_transfer`; enabled fast downloads.
-
 - RQ1 baseline (first pass)
   - Ran `run_rq1_baseline.py` with cultural pair using fallback prompts.
   - Downloaded and loaded base and tuned models; computed CKA over layers.
