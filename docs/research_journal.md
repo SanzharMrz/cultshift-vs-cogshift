@@ -236,7 +236,7 @@ ASCII Table — α Sweep @ L24 / attn_out (VAL)
 | 0.5   | 0.572   | 0.166      | 0.406     | 71.0%   |
 | 0.7   | 0.572   | 0.227      | 0.344     | 60.2%   |
 | 1.0   | 0.572   | 0.374      | 0.198     | 34.7%   |
-+-------+---------+------------+-----------+---------+
+
 
 Notes: n=150 prompts, k_positions=1 (last content token), hook=attn_out. Best α ≈ 0.3 (largest ΔKL, lowest KL_mapped).
 
@@ -377,3 +377,6 @@ Figures (VAL, K=1; L26 / attn_out)
 ![Single-head coverage by head](../mechdiff/artifacts/rq4/fig/single_head_coverage_by_head.png)
 
 ![Single-head Δ by head](../mechdiff/artifacts/rq4/fig/single_head_delta_by_head.png)
+
+
+# Cognitive part
