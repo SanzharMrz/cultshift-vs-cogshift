@@ -193,14 +193,6 @@ Setup: pair_cultural (base ↔ tuned), Layer L24, hook=attn_out, K=1 (last conte
 val set n=150 prompts (Kazakh cultural free-form), Procrustes-scaled map with shrink=0.05.
 Metric: mean next-token KL divergence between patched vs. unpatched logits.
 
-ASCII Table — α Sweep @ L24 / attn_out
---------------------------------------
-| alpha |  KL_raw  | KL_mapped |  ΔKL  |  % drop |
-|-------|----------|-----------|-------|---------|
-| 0.3   |  0.572   |   0.130   | 0.442 |  77.0%  |
-| 0.5   |  0.572   |   0.1656  | 0.4063|  71.0%  |
-| 0.7   |  0.572   |   0.2275  | 0.3445|  60.2%  |
-| 1.0   |  0.572   |   0.3738  | 0.1982|  34.7%  |
 
 Bullet Summary (to paste in Results)
 ------------------------------------
@@ -229,7 +221,7 @@ On the held‑out VAL set, a Procrustes CLT map at L24/attn_out causally reduces
 
 ASCII Table — α Sweep @ L24 / attn_out (VAL)
 
-+-------+---------+------------+-----------+---------+
+--------------------------------------
 | alpha | KL_raw  | KL_mapped  | ΔKL       | Drop %  |
 +-------+---------+------------+-----------+---------+
 | 0.3   | 0.572   | 0.130      | 0.442     | 77.3%   |
