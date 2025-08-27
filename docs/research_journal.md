@@ -1,4 +1,6 @@
-### Research journal
+# Research journal
+
+## Cultural Part
 
 - RQ1 baseline (first pass)
   - Ran `run_rq1_baseline.py` with cultural pair using fallback prompts.
@@ -371,4 +373,4 @@ Figures (VAL, K=1; L26 / attn_out)
 ![Single-head Δ by head](../mechdiff/artifacts/rq4/fig/single_head_delta_by_head.png)
 
 
-# Cognitive part
+## Cognitive part
