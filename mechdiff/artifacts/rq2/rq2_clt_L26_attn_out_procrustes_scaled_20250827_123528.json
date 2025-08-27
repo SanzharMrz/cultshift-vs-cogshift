@@ -1,0 +1,22 @@
+{
+  "layer": 26,
+  "n_train": 450,
+  "n_val": 150,
+  "k_positions": 1,
+  "hook": "attn_out",
+  "val_r2": -0.367,
+  "train_r2": 0.9976,
+  "r2_shuffled": -0.3704,
+  "lam": null,
+  "solver": "procrustes_scaled",
+  "pca_q": 0,
+  "logit_subspace": "0",
+  "cka_mapped_vs_tuned_val": 0.5422,
+  "cos_stats": {
+    "mean": 0.4418037163217862,
+    "median": 0.432596892118454,
+    "p10": 0.2744312882423401,
+    "p90": 0.6114336252212524
+  },
+  "map_path": "mechdiff/artifacts/rq2/maps/rq2_clt_L26_attn_out_procrustes_scaled_20250827_123528.pt"
+}

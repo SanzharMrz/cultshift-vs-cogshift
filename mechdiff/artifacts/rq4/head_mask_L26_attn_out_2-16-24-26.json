@@ -1,0 +1,13 @@
+{
+  "layer": 26,
+  "hook": "attn_out",
+  "split": "val",
+  "k_positions": 1,
+  "n": 150,
+  "KL_raw_mean": 0.192798517011106,
+  "KL_mapped_mean": 0.002607706397927056,
+  "reduction": 0.19019081061317894,
+  "alpha": 1.0,
+  "head_mask": "2,16,24,26",
+  "mode": "raw_pre_o_proj"
+}

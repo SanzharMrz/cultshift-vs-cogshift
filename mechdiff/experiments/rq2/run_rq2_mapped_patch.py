@@ -31,6 +31,7 @@ def main():
     ap.add_argument("--split", default="val", choices=["train","val"], help="Evaluate on train or val prompts")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--alpha", type=float, default=None, help="Optional scale override applied to mapped states")
+    ap.add_argument("--head_mask", default="ALL", help='Per-head mask for attn_out, e.g. "3,7,12", "ALL", or "NONE"')
     args = ap.parse_args()
 
     meta = None
@@ -69,24 +70,85 @@ def main():
                 return i
         return len(ids)-1
 
-    def kl_nexttoken_at(model, tok, chat, j, patched_vec=None):
-        # optionally patch tuned residual at decision token
+    def kl_nexttoken_at(model, tok, chat, j_tuned, patched_vec=None):
+        # Optionally patch tuned model at decision token j_tuned
         with torch.no_grad():
             enc = tok(chat, return_tensors="pt")
             enc = {k: v.to(args.device) for k, v in enc.items()}
             if patched_vec is None:
                 out = model(**enc)
-                return out.logits[:, j, :]
-            # patch via forward hook
-            def injector(module, inputs, output):
-                out = output.clone()
-                out[:, j, :] = patched_vec.to(out.dtype).to(out.device)
-                return out
-            block = model.model.layers[layer]
-            h = block.register_forward_hook(lambda m, i, o: injector(m, i, o))
-            out = model(**enc)
-            h.remove()
-            return out.logits[:, j, :]
+                return out.logits[:, j_tuned, :]
+            # attn_out: inject at pre o_proj per head using pinv(W_o); otherwise fallback to resid replacement
+            if args.hook.lower() == "attn_out":
+                attn = model.model.layers[layer].self_attn
+                cfg = getattr(model, "config", None)
+                n_heads = getattr(cfg, "num_attention_heads", None) if cfg is not None else None
+                if n_heads is None:
+                    out = model(**enc)
+                    return out.logits[:, j_tuned, :]
+                d_model = attn.o_proj.in_features
+                assert d_model % n_heads == 0, "d_model % n_heads != 0"
+                d_head = d_model // n_heads
+                # cache pinv(W_o)
+                if not hasattr(model, "_pinv_cache"):
+                    model._pinv_cache = {}
+                key = (id(model), layer)
+                if key not in model._pinv_cache:
+                    W_o = attn.o_proj.weight.to(args.device)
+                    model._pinv_cache[key] = torch.linalg.pinv(W_o, rcond=1e-4)
+                W_pinv = model._pinv_cache[key]
+
+                def parse_head_mask(mask_str: str, H: int):
+                    ms = (mask_str or "").strip().upper()
+                    if ms in ("", "ALL"):
+                        keep = [True] * H
+                    elif ms == "NONE":
+                        keep = [False] * H
+                    else:
+                        try:
+                            idxs = {int(x) for x in ms.split(",") if x.strip()}
+                        except Exception:
+                            idxs = set()
+                        keep = [h in idxs for h in range(H)]
+                    return torch.tensor(keep, dtype=torch.bool, device=args.device).view(1, H, 1)
+
+                hm = parse_head_mask(args.head_mask, n_heads)
+                alpha_here = float(args.alpha) if args.alpha is not None else 1.0
+
+                hit_counter = {"n": 0}
+
+                def pre_injector(mod, inputs):
+                    hit_counter["n"] += 1
+                    x_pre, = inputs  # [B, T, d_model]
+                    x_pre = x_pre.clone()
+                    B, T, D = x_pre.shape
+                    # current heads at j_tuned
+                    xj = x_pre[:, j_tuned, :]
+                    xj_h = xj.view(B, n_heads, d_head)
+                    # map patched post-proj to pre-proj head space
+                    pm = patched_vec.to(x_pre.dtype).to(x_pre.device)
+                    xmap_pre = (pm @ W_pinv.T)
+                    xmap_h = xmap_pre.view(B, n_heads, d_head)
+                    blended = torch.where(hm, xj_h + alpha_here * (xmap_h - xj_h), xj_h)
+                    x_pre[:, j_tuned, :] = blended.view(B, D)
+                    return (x_pre,)
+
+                h = attn.o_proj.register_forward_pre_hook(pre_injector)
+                out = model(**enc)
+                h.remove()
+                assert hit_counter["n"] >= 1, "attn_out pre-hook did not fire"
+                return out.logits[:, j_tuned, :]
+            else:
+                # fallback: replace residual-like tensor at block output position
+                def injector(module, inputs, output):
+                    out = output.clone()
+                    out[:, j_tuned, :] = patched_vec.to(out.dtype).to(out.device)
+                    return out
+                block = model.model.layers[layer]
+                h = block.register_forward_hook(lambda m, i, o: injector(m, i, o))
+                out = model(**enc)
+                h.remove()
+                return out.logits[:, j_tuned, :]
 
     import math
     from torch.nn.functional import log_softmax
@@ -104,18 +166,19 @@ def main():
     for p in prompts[:150]:
         chat_b = apply_chat(tok_b, p)
         chat_t = apply_chat(tok_t, p)
-        j = last_content_index(tok_t, chat_t)
+        j_t = last_content_index(tok_t, chat_t)
+        j_b = last_content_index(tok_b, chat_b)
         # Original logits at decision index
-        logit_orig = kl_nexttoken_at(tuned, tok_t, chat_t, j, None)
+        logit_orig = kl_nexttoken_at(tuned, tok_t, chat_t, j_t, None)
         # Base residual at decision token
         with torch.no_grad():
             enc_b = tok_b(chat_b, return_tensors="pt").to(args.device)
             with cache_layer_with_hook(base, layer, hook) as c:
                 _ = base(**enc_b)
-            h_b = c.acts[-1][:, j, :].to(torch.float32).cpu()
+            h_b = c.acts[-1][:, j_b, :].to(torch.float32).cpu()
         # Raw baseline whiten/color
         h_raw = ((h_b - mu_b) / (sd_b + 1e-6)) * sd_t + mu_t
-        logit_raw = kl_nexttoken_at(tuned, tok_t, chat_t, j, h_raw.to(args.device))
+        logit_raw = kl_nexttoken_at(tuned, tok_t, chat_t, j_t, h_raw.to(args.device))
         p1 = log_softmax(logit_raw, dim=-1)
         p0 = log_softmax(logit_orig, dim=-1)
         KL_raw.append((p1.exp() * (p1 - p0)).sum(-1).item())
@@ -139,7 +202,7 @@ def main():
         else:
             h_map = None
         if h_map is not None:
-            logit_map = kl_nexttoken_at(tuned, tok_t, chat_t, j, h_map.to(args.device))
+            logit_map = kl_nexttoken_at(tuned, tok_t, chat_t, j_t, h_map.to(args.device))
             p1m = log_softmax(logit_map, dim=-1)
             KL_mapped.append((p1m.exp() * (p1m - p0)).sum(-1).item())
 
@@ -157,6 +220,8 @@ def main():
         "map_layer": map_layer,
         "solver": solver,
         "alpha": float(args.alpha) if args.alpha is not None else float(alpha_bundle) if isinstance(alpha_bundle, (int, float)) else alpha_bundle,
+        "alpha_used": float(args.alpha) if args.alpha is not None else float(alpha_bundle) if isinstance(alpha_bundle, (int, float)) else alpha_bundle,
+        "head_mask": args.head_mask,
         "map_file": map_path,
     }
     if KL_raw and KL_mapped:

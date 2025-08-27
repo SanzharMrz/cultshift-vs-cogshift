@@ -1,0 +1,266 @@
+Absolutely—let’s make **RQ4** as push-button as RQ3.
+
+Here’s a clean, single-command grid you (or Cursor) can run to produce **all** head-level results (top-k vs random-k, per-head scan, controls), then auto-summarize into tables. I’m also including the one tiny code tweak you’ll need to enable **per-head masking** during patch.
+
+---
+
+# 0) One tiny patch: enable `--head_mask` in mapped-patch
+
+In your `run_rq2_mapped_patch` path where you mix **patched** vs **original** at `attn_out`, add a per-head mask:
+
+```python
+# inside your hook at L{layer} / attn_out, after you've computed:
+#   attn_orig:  (B, T, D)
+#   attn_mapped:(B, T, D)
+# target: only replace selected heads in attn_out with the mapped version
+
+import torch
+
+cfg = model.config
+n_heads = getattr(cfg, "num_attention_heads", None)
+assert n_heads is not None, "Need model.config.num_attention_heads for per-head masking"
+d_model = attn_orig.size(-1)
+assert d_model % n_heads == 0
+d_head = d_model // n_heads
+
+# reshape to [B, T, H, d_head]
+attn_o = attn_orig.view(attn_orig.size(0), attn_orig.size(1), n_heads, d_head)
+attn_m = attn_mapped.view(attn_mapped.size(0), attn_mapped.size(1), n_heads, d_head)
+
+# parse CLI flag: --head_mask "3,7,12" or "ALL" or "NONE"
+# convert to a boolean mask of shape [H]
+def parse_head_mask(mask_str: str, n_heads: int) -> torch.Tensor:
+    if mask_str.upper() == "ALL":
+        keep = [True] * n_heads
+    elif mask_str.upper() in ("", "NONE"):
+        keep = [False] * n_heads
+    else:
+        idxs = [int(x) for x in mask_str.split(",") if x.strip()]
+        keep = [h in idxs for h in range(n_heads)]
+    return torch.tensor(keep, dtype=torch.bool, device=attn_o.device)
+
+head_mask_bool = parse_head_mask(args.head_mask, n_heads)  # add argparse option
+# broadcast to [1,1,H,1]
+hm = head_mask_bool.view(1,1,n_heads,1)
+
+alpha = args.alpha  # your existing scalar
+# blend only selected heads; others remain original
+attn_blend = torch.where(hm, (1-alpha)*attn_o + alpha*attn_m, attn_o)
+
+# restore shape [B, T, D]
+attn_out = attn_blend.view(attn_blend.size(0), attn_blend.size(1), d_model)
+return attn_out
+```
+
+Also add to argparse:
+
+```python
+ap.add_argument("--head_mask", default="ALL", help='e.g. "3,7,12", "ALL", or "NONE"')
+```
+
+That’s it—you can now patch **any subset of heads**.
+
+---
+
+# 1) Single driver to run **all** RQ4 grids (and summarize)
+
+Save this as `scripts/rq4_run_and_summarize.py`:
+
+```python
+#!/usr/bin/env python3
+import os, glob, json, subprocess, shlex, random, itertools, math
+from pathlib import Path
+
+PAIR = "mechdiff/pairs/pair_cultural.py"
+VAL_SPLIT = "val"  # we evaluate on VAL; your mapped_patch already supports split if needed
+ART = Path("mechdiff/artifacts/rq4"); ART.mkdir(parents=True, exist_ok=True)
+
+LAYER_MAIN = 26
+LAYER_CTRL = 24
+HOOK = "attn_out"
+ALPHA = 0.3
+K_LIST = [1,2,4,8]
+RAND_SEEDS = [0,1,2]
+
+def run(cmd):
+    print(">>", cmd)
+    subprocess.run(cmd, shell=True, check=True)
+
+def jread(p):
+    with open(p, "r") as f:
+        return json.load(f)
+
+def jwrite(obj, p):
+    with open(p, "w") as f:
+        json.dump(obj, f, indent=2)
+
+def latest_map_json(layer, hook):
+    # pick the best mapping you already trained for this (layer, hook)
+    # we’ll reuse the procrustes_scaled K=1 map from RQ2
+    cands = sorted(glob.glob(f"mechdiff/artifacts/rq2/rq2_clt_L{layer}_*procrustes_scaled*.json"))
+    for j in reversed(cands):
+        d = jread(j)
+        if d.get("hook", hook) == hook and d.get("k_positions", 1) == 1:
+            return d
+    # fallback: newest
+    return jread(cands[-1]) if cands else None
+
+def heads(model_cfg_json="mechdiff/artifacts/model_cfg.json"):
+    # Use a cached cfg if you already save one; otherwise parse on the fly (cheap)
+    # For simplicity, just assume 32 heads; adjust if needed.
+    return 32
+
+def topk_from_single_head(layer, hook, alpha, map_pt, k):
+    """
+    Rank heads by single-head ΔKL and return the best head indices.
+    If single-head results exist, reuse; else compute.
+    """
+    H = heads()
+    # reuse if cache exists
+    single_csv = ART / f"single_head_L{layer}_{hook}_alpha{alpha}.json"
+    if single_csv.exists():
+        per = jread(single_csv)
+    else:
+        per = []
+        for h in range(H):
+            out = ART / f"mapped_patch_L{layer}_{hook}_head{h}_alpha{alpha}.json"
+            if not out.exists():
+                cmd = f"python -m mechdiff.experiments.rq2.run_rq2_mapped_patch " \
+                      f"--pair {PAIR} --layer {layer} --hook {hook} --k1_decision " \
+                      f"--alpha {alpha} --head_mask {h} --map_file {shlex.quote(map_pt)}"
+                run(cmd)
+                # the script should write something like artifacts/rq2/mapped_patch_*.json — move into rq4
+                # Try read the last JSON it produced:
+                newest = sorted(glob.glob("mechdiff/artifacts/rq2/mapped_patch_*.json"))[-1]
+                os.replace(newest, out)
+            d = jread(out)
+            drop = (d["KL_raw_mean"] - d["KL_mapped_mean"]) / max(1e-9, d["KL_raw_mean"]) * 100.0
+            per.append({"head": h, "drop_pct": drop, "KL_raw": d["KL_raw_mean"], "KL_mapped": d["KL_mapped_mean"]})
+        jwrite(per, single_csv)
+    per = sorted(per, key=lambda x: x["drop_pct"], reverse=True)
+    return [p["head"] for p in per[:k]], per
+
+def mask_str(idxs):
+    return ",".join(str(i) for i in idxs) if idxs else "NONE"
+
+def run_cond(layer, hook, alpha, head_mask, tag):
+    dmap = latest_map_json(layer, hook)
+    assert dmap and dmap.get("map_path"), f"No map JSON for L{layer}/{hook}"
+    map_pt = dmap["map_path"]
+    out_name = ART / f"mapped_patch_L{layer}_{hook}_{tag}.json"
+    if out_name.exists():
+        return jread(out_name)
+    cmd = f"python -m mechdiff.experiments.rq2.run_rq2_mapped_patch " \
+          f"--pair {PAIR} --layer {layer} --hook {hook} --k1_decision " \
+          f"--alpha {alpha} --head_mask {head_mask} --map_file {shlex.quote(map_pt)}"
+    run(cmd)
+    newest = sorted(glob.glob("mechdiff/artifacts/rq2/mapped_patch_*.json"))[-1]
+    os.replace(newest, out_name)
+    return jread(out_name)
+
+def main():
+    H = heads()
+
+    results = []
+
+    # 1) FULL heads (reference) @ L26
+    res_full = run_cond(LAYER_MAIN, HOOK, ALPHA, "ALL", f"full_alpha{ALPHA}")
+    results.append({"layer":LAYER_MAIN,"hook":HOOK,"cond":"full","alpha":ALPHA,**res_full})
+
+    # 2) Top-k vs random-k @ L26
+    dmap = latest_map_json(LAYER_MAIN, HOOK); map_pt = dmap["map_path"]
+    for k in K_LIST:
+        topk, per = topk_from_single_head(LAYER_MAIN, HOOK, ALPHA, map_pt, k)
+        res_topk = run_cond(LAYER_MAIN, HOOK, ALPHA, mask_str(topk), f"top{k}_alpha{ALPHA}")
+        results.append({"layer":LAYER_MAIN,"hook":HOOK,"cond":f"top{k}","alpha":ALPHA,"heads":topk,**res_topk})
+
+        # random baselines
+        for seed in RAND_SEEDS:
+            random.seed(seed)
+            rmask = sorted(random.sample(range(H), k))
+            res_rand = run_cond(LAYER_MAIN, HOOK, ALPHA, mask_str(rmask), f"rand{k}_s{seed}_alpha{ALPHA}")
+            results.append({"layer":LAYER_MAIN,"hook":HOOK,"cond":f"rand{k}_s{seed}","alpha":ALPHA,"heads":rmask,**res_rand})
+
+    # 3) Negative control: L24 / attn_out, full heads
+    res_ctrl = run_cond(LAYER_CTRL, HOOK, ALPHA, "ALL", f"ctrl_L{LAYER_CTRL}_full_alpha{ALPHA}")
+    results.append({"layer":LAYER_CTRL,"hook":HOOK,"cond":"ctrl_full","alpha":ALPHA,**res_ctrl})
+
+    # 4) Save and summarize
+    out_json = ART / "rq4_results.json"
+    jwrite(results, out_json)
+
+    # Pretty print summary (coverage: ΔKL vs full)
+    full_drop = (res_full["KL_raw_mean"] - res_full["KL_mapped_mean"])
+    print("\n=== RQ4 Summary (ΔKL coverage vs FULL @ L26/attn_out) ===")
+    print(f"FULL @ L26/attn_out: raw={res_full['KL_raw_mean']:.3f} mapped={res_full['KL_mapped_mean']:.3f} Δ={full_drop:.3f}")
+    rows = []
+    for r in results:
+        if r["layer"]==LAYER_MAIN and r["hook"]==HOOK and r["cond"].startswith(("top","rand")):
+            delta = r["KL_raw_mean"] - r["KL_mapped_mean"]
+            coverage = 100.0 * delta / max(1e-9, full_drop)
+            rows.append((r["cond"], r.get("heads", []), delta, coverage))
+    # sort by k then cond
+    def k_of(c): 
+        return int(c.split("_")[0].replace("top","").replace("rand",""))
+    rows.sort(key=lambda x: (k_of(x[0]), x[0]))
+    w = max(len(x[0]) for x in rows) if rows else 12
+    print(f"\n{'cond':<{w}}  {'ΔKL':>8}  {'coverage%':>10}  heads")
+    for cond, heads_, delta, cov in rows:
+        print(f"{cond:<{w}}  {delta:8.3f}  {cov:10.1f}  {heads_}")
+
+    # Control line
+    d_ctrl = res_ctrl["KL_raw_mean"] - res_ctrl["KL_mapped_mean"]
+    print(f"\nControl L24/attn_out (full): ΔKL={d_ctrl:.3f}  (expect ≤ 0 / not helpful)")
+
+if __name__ == "__main__":
+    main()
+```
+
+Run it once:
+
+```bash
+python scripts/rq4_run_and_summarize.py
+```
+
+It will:
+
+* Use your **existing RQ2 maps** (Procrustes, K=1) for L26/L24.
+* **Scan single heads** to rank them (ΔKL drop per head).
+* Run **top-k** vs **random-k** patches for k∈{1,2,4,8} at **α=0.3**.
+* Save every JSON into `mechdiff/artifacts/rq4/*.json`.
+* Print a concise table with ΔKL **coverage vs FULL**.
+* Include the **L24/attn\_out** negative control.
+
+---
+
+## What parameters we grid over (and why)
+
+* **Layer**: 26 (main), 24 (control) — from your earlier findings.
+* **Hook**: `attn_out` — the strongest transport handle.
+* **α**: 0.3 — best causal effect you saw in RQ2/RQ3; fixed to isolate head selection.
+* **k** in `{1,2,4,8}` — tests “few heads suffice”.
+* **Random seeds** for random-k baselines: `{0,1,2}` — robust comparison.
+
+This set is enough to make the head-localization claim **without** exploding runs.
+
+---
+
+## What to send me after it finishes
+
+* `mechdiff/artifacts/rq4/rq4_results.json`
+* The console summary block it prints (copy/paste)
+* If possible: the per-head list it cached at
+  `mechdiff/artifacts/rq4/single_head_L26_attn_out_alpha0.3.json`
+
+With those I can interpret everything (coverage curves, top heads, random baselines, and the control).
+
+---
+
+### Notes
+
+* If you don’t want to implement grad×act now, the **single-head ΔKL ranking** is a perfectly valid causal importance signal and usually aligns well with attribution.
+* If you later add grad×act, you can plug a small function into the driver to read a head ranking from `attr_L26_attn.json` instead of scanning single heads.
+
+That’s it—one command to run the whole RQ4 grid, one JSON to share, and we’re done.
+
+Use the validation split for all RQ4 head-level runs (single-head scans, top-k vs random-k, and the summary)

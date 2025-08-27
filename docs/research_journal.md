@@ -322,6 +322,24 @@ Interpretation: Cultural tuning adds targeted, low-dimensional changes in late l
 One-liner (for abstract):
 We find that cultural fine-tuning induces low-rank, late-layer shifts—primarily in L26 attention—that are linearly transportable across models and yield ~30–35% KL reductions under causal patching, while early layers and mismatched hooks show little or negative effect, arguing against a global rotation and for localized subspace changes.
 
+Figures (RQ3 ranks)
+
+![RQ3 ranks heatmap — L26/attn_out](../mechdiff/artifacts/rq3/fig/ranks/rq3_ranks_heatmap_L26_attn_out.png)
+
+_Head-level importance concentrates at a few late attention heads (L26/attn_out)._ 
+
+![RQ3 ranks heatmap — L24/resid_post](../mechdiff/artifacts/rq3/fig/ranks/rq3_ranks_heatmap_L24_resid_post.png)
+
+_Earlier/residual site shows weaker, more diffuse structure (L24/resid_post)._ 
+
+![RQ3 drop vs alpha — L26/attn_out](../mechdiff/artifacts/rq3/fig/ranks/rq3_ranks_drop_vs_alpha_L26_attn_out.png)
+
+_Effect size peaks at small α (~0.3), confirming scale sensitivity at L26/attn_out._ 
+
+![RQ3 drop vs alpha — L24/resid_post](../mechdiff/artifacts/rq3/fig/ranks/rq3_ranks_drop_vs_alpha_L24_resid_post.png)
+
+_Moderate positive drops across α at L24/resid_post; consistent but smaller than L26._ 
+
 #### RQ3 — Top results table (val)
 
 | Rank | layer | hook       | α   | KL_raw | KL_mapped |   ΔKL | drop% | файл                                              |
@@ -332,3 +350,34 @@ We find that cultural fine-tuning induces low-rank, late-layer shifts—primaril
 |    4 |    24 | resid_post | 0.7 |  6.434 |     5.596 | 0.838 |  13.0 | mapped_patch_L24_resid_post_alpha0.7.json         |
 |    5 |    24 | mlp_out    | 1.0 |  7.185 |     6.462 | 0.723 |  10.1 | mapped_patch_L24_mlp_out_alpha1.0.json            |
 |    — |    24 | attn_out   | 0.7 |  5.764 |     6.981 | -1.217| -21.1 | mapped_patch_L24_attn_out_alpha0.7.json (ухудшение) |
+
+
+### RQ4 — Head-level localization (cultural, L26/attn_out)
+
+**Protocol.** Raw head substitution in the tuned model at the decision token (VAL, K=1): replace selected heads’ `attn_out` with base model `attn_out` and measure $\mathrm{KL}_{\text{raw}}$. FULL RAW reference is `head_mask=ALL` → $\mathrm{KL}_{\text{raw}}(\text{ALL})$. We report **coverage% = 100·KL_raw(S)/KL_raw(ALL)**.
+ 
+ 
+**Results.**
+
+- **Single head covers ~100%:** L26 head **24** achieves **≈100% coverage** (KL_raw ≈ 0.193), heads **8** and **0** are ≈99.9% and ≈98.5% respectively.
+- **Pairs saturate:** heads **24–26** also ≈100% (no additive gain beyond head 24).
+- **Broader mixes are lower:** top-4 ≈98.6%; top-8 ≈90%.
+- **Early group is weak:** bundles without those late heads cover far less.
+
+```
+k = number of heads in the subset
+k=-1 (ALL):   Δ=0.000 (by definition for our Δ field), coverage 0.0%
+k=1:          best Δ≈0.193, coverage≈100%  (head 24)
+k=2:          best Δ≈0.193, coverage≈100%  (heads 24–26)
+k=4:          best Δ≈0.190, coverage≈98.6% (e.g., 2–16–24–26)
+k=8:          best Δ≈0.173, coverage≈90.0% (e.g., 2–3–8–18–24–25–27–31)
+Top single heads by coverage: 24 (100%), 8 (≈99.9%), 0 (≈98.5%), 3 (≈92.8%), ...
+```
+
+**Takeaway.** This pinpoints the **mechanism** behind RQ3’s low-rank finding (rank≈1 at L26): the global 1D “cultural” direction is **implemented by a tiny set of late attention heads**, chiefly head 24. The effect is not diffuse — top-k ≫ random-k at matched k.
+
+Figures (VAL, K=1; L26 / attn_out)
+
+![Single-head coverage by head](../mechdiff/artifacts/rq4/fig/single_head_coverage_by_head.png)
+
+![Single-head Δ by head](../mechdiff/artifacts/rq4/fig/single_head_delta_by_head.png)
