@@ -1,0 +1,16 @@
+{
+  "layer": 26,
+  "hook": "attn_out",
+  "split": "val",
+  "k_positions": 1,
+  "n": 150,
+  "KL_raw_mean": 0.0018802094356700158,
+  "KL_mapped_mean": 0.0024240437320743997,
+  "reduction": -0.0005438342964043839,
+  "map_layer": 26,
+  "solver": "procrustes_scaled",
+  "alpha": 0.9381065368652344,
+  "alpha_used": 0.9381065368652344,
+  "head_mask": "ALL",
+  "map_file": "mechdiff/artifacts/cognitive/rq2/maps/rq2_clt_L26_attn_out_procrustes_scaled_20250828_134000.pt"
+}

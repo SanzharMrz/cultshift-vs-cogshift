@@ -1,0 +1,38 @@
+- I mirrored `experiments/cultural` into `experiments/cognitive` and set defaults for the cognitive pair and data.
+
+What I changed:
+- Added `mechdiff/experiments/cognitive/` with `rq1`, `rq2`, `rq3`, `rq4` subpackages and `__init__.py` in each.
+- RQ1:
+  - `rq1/run_rq1_baseline.py`: standalone cognitive default (`--pair mechdiff/pairs/pair_cognitive.py`).
+  - `rq1/run_rq1_layer_patch.py`: cognitive default and CLI preserved.
+  - `rq1/run_rq1_behavior.py`: cognitive default and CLI preserved.
+- RQ2:
+  - `rq2/run_rq2_clt.py`: cognitive version reads prompts/positions from `mechdiff/data/cognitive/rq2`.
+  - `rq2/run_rq2_mapped_patch.py`: cognitive wrapper importing cultural logic.
+- RQ3:
+  - `rq3/run_rq3_alpha_sweep.py`, `rq3/run_rq3_aggregate.py`, `rq3/plot_rq3_results.py`, `rq3/plot_rq3_ranks.py`: thin wrappers importing cultural scripts (same behavior).
+- RQ4:
+  - `rq4/run_and_summarize.py`, `rq4/head_mask_patch.py`, `rq4/plot_rq4.py`, `rq4/summarize_artifacts.py`: thin wrappers importing cultural scripts (same behavior).
+- Kept your cognitive data prep at:
+  - `scripts/prep_prompts_rq2_cognitive.py` (impl) and a delegator entrypoint `mechdiff/experiments/cognitive/prep_prompts_rq2.py`.
+
+How to run (you execute):
+- Data curation:
+  - python -m mechdiff.experiments.cognitive.prep_prompts_rq2 --n_train 450 --n_val 150
+- RQ1:
+  - python -m mechdiff.experiments.cognitive.rq1.run_rq1_baseline
+  - python -m mechdiff.experiments.cognitive.rq1.run_rq1_layer_patch
+  - python -m mechdiff.experiments.cognitive.rq1.run_rq1_behavior
+- RQ2:
+  - python -m mechdiff.experiments.cognitive.rq2.run_rq2_clt --layer 24 --hook attn_out --k1_decision --solver procrustes_scaled --shrink 0.05 --alpha auto
+  - python -m mechdiff.experiments.cognitive.rq2.run_rq2_mapped_patch --pair mechdiff/pairs/pair_cognitive.py ...
+- RQ3:
+  - python -m mechdiff.experiments.cognitive.rq3.run_rq3_alpha_sweep --pair mechdiff/pairs/pair_cognitive.py ...
+  - python -m mechdiff.experiments.cognitive.rq3.run_rq3_aggregate
+  - python -m mechdiff.experiments.cognitive.rq3.plot_rq3_results
+- RQ4:
+  - python -m mechdiff.experiments.cognitive.rq4.run_and_summarize
+  - python -m mechdiff.experiments.cognitive.rq4.plot_rq4
+  - python -m mechdiff.experiments.cognitive.rq4.summarize_artifacts
+
+Status: Created cognitive RQ1–RQ4 modules mirroring cultural structure; set cognitive defaults and data path, and ensured no scripts were executed.

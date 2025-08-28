@@ -42,23 +42,31 @@ def main():
     shared, ids_b, ids_t, allowed_b, allowed_t = shared_vocab_maps(tok_b, tok_t)
     print(f"Shared tokens: {len(shared)}")
 
-    # Prompts
+    # Prompts (robust path resolution: absolute, as-is, then prefixed with "mechdiff/")
     if args.prompt_file:
         freeform_path = args.prompt_file
     else:
         freeform_path = pair.get("datasets", {}).get("freeform_file")
     prompts: List[str] = []
-    if freeform_path and os.path.exists(os.path.join("mechdiff", freeform_path)):
-        full = os.path.join("mechdiff", freeform_path)
-        with open(full, "r", encoding="utf-8") as f:
-            for line in f:
-                try:
-                    obj = json.loads(line)
-                    prompts.append(obj.get("text") or obj.get("prompt") or "")
-                except Exception:
-                    s = line.strip()
-                    if s:
-                        prompts.append(s)
+    if freeform_path:
+        candidates = []
+        candidates.append(freeform_path)
+        candidates.append(os.path.join("mechdiff", freeform_path))
+        full = None
+        for pth in candidates:
+            if os.path.exists(pth):
+                full = pth
+                break
+        if full:
+            with open(full, "r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        obj = json.loads(line)
+                        prompts.append(obj.get("text") or obj.get("prompt") or "")
+                    except Exception:
+                        s = line.strip()
+                        if s:
+                            prompts.append(s)
     else:
         prompts = [
             "1+1=?",
@@ -96,7 +104,7 @@ def main():
         cka_by_layer[L] = cka
         print(f"Layer {L}: CKA = {cka:.4f}")
 
-    out_dir = os.path.join("mechdiff", "artifacts", "rq1")
+    out_dir = os.path.join("mechdiff", "artifacts", "cognitive", "rq1")
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, "rq1_cka.json")
     with open(out_path, "w", encoding="utf-8") as f:

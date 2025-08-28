@@ -1,0 +1,16 @@
+{
+  "layer": 30,
+  "hook": "resid_post",
+  "split": "val",
+  "k_positions": 1,
+  "n": 150,
+  "KL_raw_mean": 0.48378924290339154,
+  "KL_mapped_mean": 0.8273012337088584,
+  "reduction": -0.3435119908054669,
+  "map_layer": 30,
+  "solver": "procrustes_scaled",
+  "alpha": 1.2,
+  "alpha_used": 1.2,
+  "head_mask": "ALL",
+  "map_file": "mechdiff/artifacts/cognitive/rq2/maps/rq2_clt_L30_resid_post_procrustes_scaled_20250828_201239.pt"
+}

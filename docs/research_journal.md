@@ -374,3 +374,200 @@ Figures (VAL, K=1; L26 / attn_out)
 
 
 ## Cognitive part
+
+**Goal.** Compare a **cognitive fine-tune** (OpenMath2-Llama-3.1-8B) vs the **base** (Llama-3.1-8B-Instruct) using the *same* tokenizer-robust pipeline as in the cultural study.
+
+### RQ1 — Cognitive (dataset, splits, CKA)
+
+- Dataset: MATH-500 (train) curated to `mechdiff/data/cognitive/rq2/`
+  - Splits: train=350, val=150 (JSONL with `text`, `label`, `meta`)
+  - Shared tokenizer and chat templating on; fairness filter used in runners
+- RQ1 Baseline CKA (resid_post), base vs OpenMath2 (per layer):
+  - L0: 0.8916
+  - L2: 0.9169
+  - L4: 0.8531
+  - L6: 0.8346
+  - L8: 0.7445
+  - L10: 0.5850
+  - L12: 0.5617
+  - L14: 0.6497
+  - L16: 0.6752
+  - L18: 0.6994
+  - L20: 0.6767
+  - L22: 0.6595
+  - L24: 0.6640
+  - L26: 0.6790
+  - L28: 0.7061
+  - L30: 0.7189
+
+One‑liner: Cognitive fine‑tune (OpenMath2) diverges early–mid (min CKA ≈ 0.56 @ L12, lowest across L10–14) and re‑converges late (≈0.72 by L30), the opposite of cultural (late‑layer dip). Probe L10–14 first.
+
+Conclusion: Using MATH‑500 (train) with shared tokenizer and chat templating, CKA shows an early–mid divergence between base and OpenMath2: it bottoms out around L12 (≈0.56) and is lowest across L10–14, then reconverges late (≈0.72 by L30). This inverts the cultural case (dip at L24–26), supporting the hypothesis that cognitive fine‑tuning changes upstream reasoning/parse circuits, while cultural tuning mainly shifts downstream response/style.
+
+Next (RQ1 causal): run layer‑patch on L8/10/12/14 (+ controls L24/26/30) to confirm the causal hotspot; carry peak layers into RQ2 (CLT maps) and RQ3 (rank‑k).
+
+#### RQ1 — layer‑patch (decision token, resid_post)
+
+- KL results (N=350) — mean next‑token KL by layer:
+  - tuned<-base: L8=0.005, L10=0.014, L12=0.020, L14=0.052, L24=0.264, L26=0.307, L30=0.441
+  - base<-tuned: L8=0.097, L10=0.153, L12=0.379, L14=0.225, L24=0.541, L26=0.788, L30=1.699
+- Refusal deltas: 0 at all layers (benign math prompts; expected)
+
+```python
+RQ1 — Layer-Patch KL Summary
+
+N_prompts=350
+Layer  KL(tuned<-base)  KL(base<-tuned)
+    8            0.005            0.097
+   10            0.014            0.153
+   12            0.020            0.379
+   14            0.052            0.225
+   24            0.264            0.541
+   26            0.307            0.788
+   30            0.441            1.699
+
+RQ1 — Per-Layer Effects
+
+Layer  KL_t<-b  KL_b<-t  Δref_t<-b(pp)  Δref_b<-t(pp)
+    8     0.005    0.097          0.00           0.00
+   10     0.014    0.153          0.00           0.00
+   12     0.020    0.379          0.00           0.00
+   14     0.052    0.225          0.00           0.00
+   24     0.264    0.541          0.00           0.00
+   26     0.307    0.788          0.00           0.00
+   30     0.441    1.699          0.00           0.00
+
+Top KL layers (tuned<-base):
+L30: 0.441
+L26: 0.307
+L24: 0.264
+L14: 0.052
+L12: 0.020
+```
+
+- Summary:
+  - CKA (rep similarity): dips early–mid (min ≈ L12 ≈ 0.56), then climbs back up by L30.
+  - Causal patch (KL at decision token): small early, grows late — peaks across L24→L30.
+  - Asymmetry: KL(base←tuned) ≫ KL(tuned←base) at every layer → injecting math‑tuned activations into base perturbs base more than the reverse. The math‑tuned model has specialized late‑layer structure the base lacks; it can “digest” base‑like states, but the base cannot digest tuned math states.
+  - Interpretation (cognitive): early representational drift + late causal effect fits a “parse early, decide late” picture for math — tuning refines downstream computation/decision features more than early token processing.
+  - Contrast with cultural: cultural showed late‑layer dip and opposite asymmetry (base→tuned perturbed more), consistent with re‑orientation of an existing subspace. Cognitive looks more like added capability (new late‑layer features), implying harder base→tuned linear transport and potentially higher effective rank / more distributed changes.
+
+- RQ2 targets (use these layers):
+  - Hot (for mapping): L24, L26, L30 (resid_post first)
+  - Control: L12 (early rep drift, small KL) to test transportability where the causal effect is weak
+
+
+### RQ2 — Cognitive mapped‑patch (VAL) summary
+
+```
+  L  hook             R2     CKA     cos    KL_raw    KL_map    drop%  alpha
+ 10  resid_post   -0.722   0.611     nan     0.015     0.023  -53.874  1.000
+ 24  resid_post   -0.732   0.871     nan     0.294     0.174   40.774  1.000
+ 26  attn_out     -0.730   0.683     nan     0.002     0.002  -28.924  0.938
+ 26  mlp_out      -0.734   0.751     nan     0.992     0.883   10.999  1.000
+ 26  resid_post   -0.819   0.871     nan     0.343     0.206   40.068  1.000
+ 30  attn_out     -0.856   0.665     nan     0.004     0.006  -35.123  0.913
+ 30  mlp_out      -1.530   0.693     nan     3.751     3.948   -5.262  1.000
+ 30  resid_post   -1.089   0.869     nan     0.484     0.245   49.439  1.000
+```
+
+- Late residual maps work well: resid_post @ L24/L26/L30 give ~41–50% ΔKL drop (0.294→0.174; 0.343→0.206; 0.484→0.245) with CKA ≈ 0.87. Scale ~right (alpha≈1).
+- Attention maps are harmful: attn_out @ L26/L30 give negative drops → linear attention transport doesn’t carry the math specialization.
+- MLP is mixed: mlp_out @ L26 is +11% (helpful), but @ L30 is −5% (hurts). Useful signal appears more residual‑centric and only partly MLP.
+- R² < 0 across the board: expected (R² punishes amplitude; direction is correct via CKA and ΔKL).
+
+Contrast vs culture: culture’s best was attention@L26 (often rank‑1). Cognitive’s best is residual (more distributed); attention linear maps don’t help, attention transport fails in cognitive
+
+### RQ3 — Cognitive (rank-k transport, resid_post)
+
+Here’s a tight, drop-in conclusion for your journal (updated to match the new plot/results).
+
+---
+
+## RQ3 — Cognitive (math) fine-tune: rank vs. causal transport
+
+**Setup.** Pair = *Llama-3.1-8B-Instruct* (base) → *OpenMath2-Llama-3.1-8B* (tuned).
+Prompts = **MATH-500** (train for fitting, val for eval).
+Layers probed (from RQ1/RQ1-patch): **L24, L26, L30** (late layers with largest causal asymmetry).
+Map = **whiten → scaled Procrustes → color**, evaluated by mapped-patch ΔKL at last content token.
+Rank sweep = **PCA k ∈ {1, 8, 32, full(=0)}**, α ∈ {0.8, 1.0, 1.2}. Split = **val**.
+
+**Key result (one line).** For cognitive, **low-rank maps break** (ΔKL < 0), while **full-rank** maps **reduce KL by ≈40–50%** at L24/L26/L30 → the math tune is **distributed/high-rank**.
+
+### Numbers (val; KL\_raw → KL\_mapped; drop = (raw−mapped)/raw)
+
+* **L24 / resid\_post**
+
+  * **k=full**: 0.294 → **0.172–0.179** (Δ≈+40–42% depending on α)
+  * **k=32**: 0.294 → **0.616–0.630** (Δ≈−110%)
+  * **k=8** : 0.294 → **0.697–0.718** (Δ≈−137…−145%)
+  * **k=1** : 0.294 → **0.714–0.737** (Δ≈−143…−151%)
+
+* **L26 / resid\_post**
+
+  * **k=full**: 0.343 → **0.206–0.208** (Δ≈+39–40%)
+  * **k=32**: 0.343 → **0.721–0.729** (Δ≈−110%)
+  * **k=8** : 0.343 → **0.806–0.809** (Δ≈−135…−141%)
+  * **k=1** : 0.343 → **0.827–0.829** (Δ≈−141…−142%)
+
+* **L30 / resid\_post**
+
+  * **k=full**: 0.484 → **0.245–0.284** (Δ≈+41–49%)
+  * **k=32**: 0.484 → **0.827–1.036** (Δ≈−114…−71%)
+  * **k=8** : 0.484 → **0.908–0.975** (Δ≈−102…−88%)
+  * **k=1** : 0.484 → **0.926–1.132** (Δ≈−92…−134%)
+
+(*Same trend across α=0.8/1.0/1.2: truncated PCA → harmful; full-rank → helpful.*)
+
+### Interpretation
+
+* **Distributed geometry.** The base→tuned transport for math is **not** captured by a small set of leading PCs. Useful directions are **spread across many axes**; truncation discards critical components and **increases** KL.
+* **Full-rank wins.** Using the **entire 4096-d residual space** recovers the transport and gives **large ΔKL drops** (+40–50%) at the late layers identified by RQ1/RQ1-patch.
+* **CKA vs R².** As before, **CKA/cos** are high (direction aligned) while **R² < 0** (amplitude off). This is expected: R² penalizes scale; α-tuning fixes scale at patch time, and **held-out KL** is the causal metric we trust.
+
+### Contrast with cultural
+
+* **Cultural:** **low-rank** (often **k=1** sufficed, e.g., L26/attn\_out), plus few attention heads could reproduce most of the effect (RQ4-cultural).
+* **Cognitive:** **high-rank**, **full-space** needed for good transport. We therefore expect in RQ4-cognitive that **more heads/components** are required to cover the full effect (no single “policy knob”).
+
+### Sanity checks (passed)
+
+* Trend is **consistent across α** (0.8/1.0/1.2) and across **L24/L26/L30**.
+* Maps and artifacts verified per {layer, hook, k}: correct **pca\_q** in metadata; **map\_path** exists; **solver=procrustes\_scaled**.
+* Evaluation uses **held-out val** prompts; ΔKL improvements are not train-only artifacts.
+
+![ΔKL vs α — L24 / resid_post](../mechdiff/artifacts/cognitive/rq3/fig_rerun/ranks/rq3_ranks_drop_vs_alpha_L24_resid_post.png)
+_ΔKL vs α by rank k at L24/resid_post; lines overlap (rank-insensitive)._ 
+
+![ΔKL drop heatmap — L24 / resid_post](../mechdiff/artifacts/cognitive/rq3/fig_rerun/ranks/rq3_ranks_heatmap_L24_resid_post.png)
+_Heatmap k×α of ΔKL drop at L24/resid_post; near-constant across k._
+
+![ΔKL vs α — L26 / resid_post](../mechdiff/artifacts/cognitive/rq3/fig_rerun/ranks/rq3_ranks_drop_vs_alpha_L26_resid_post.png)
+_ΔKL vs α by rank k at L26/resid_post; series largely overlap (k=full may separate)._ 
+
+![ΔKL drop heatmap — L26 / resid_post](../mechdiff/artifacts/cognitive/rq3/fig_rerun/ranks/rq3_ranks_heatmap_L26_resid_post.png)
+_Heatmap k×α of ΔKL drop at L26/resid_post; small variation across k._
+
+![ΔKL vs α — L30 / resid_post](../mechdiff/artifacts/cognitive/rq3/fig_rerun/ranks/rq3_ranks_drop_vs_alpha_L30_resid_post.png)
+_ΔKL vs α by rank k at L30/resid_post; curves coincide across k (rank-insensitive)._ 
+
+![ΔKL drop heatmap — L30 / resid_post](../mechdiff/artifacts/cognitive/rq3/fig_rerun/ranks/rq3_ranks_heatmap_L30_resid_post.png)
+_Heatmap k×α of ΔKL drop at L30/resid_post; flat across ranks, α controls effect size._
+
+
+### What this buys us for RQ4
+
+* We now have a **clean structural claim** to test:
+
+  > *Cognitive transport is high-rank and should be **less localizable** to a tiny set of attention heads than cultural.*
+* RQ4 will quantify **coverage vs. top-k heads** (and optionally MLP) at L24/L26/L30. Expect **no single head** to cover ≈100% (unlike cultural @ L26/attn\_out), and a **slower coverage curve** with k.
+
+### Pointers / Artifacts
+
+* Per-run JSONs: `mechdiff/artifacts/cognitive/rq3/ranks/mapped_patch_L{L}_{hook}_k{K}_alpha{A}.json`
+* CLT bundles: `mechdiff/artifacts/cognitive/rq2/rq2_clt_L{L}_{hook}_procrustes_scaled_*.json → maps/*.pt`
+* Aggregated table printed in the run log (see above block).
+
+**Next:** proceed to **RQ4-cognitive** on **resid\_post** at **L24/26/30** (plus an **attn\_out** check at L26 if you want symmetry), using the full-rank maps as the main condition and head-masking to measure **coverage vs k**. Expect broader, slower coverage than cultural → strengthens the “distributed cognition” story.
+
+

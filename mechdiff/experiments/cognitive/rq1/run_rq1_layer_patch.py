@@ -59,23 +59,33 @@ def main():
     tok_b, tok_t = load_tokenizers(base_id, tuned_id)
     shared, ids_b, ids_t, allowed_b, allowed_t = shared_vocab_maps(tok_b, tok_t)
 
-    # Prompts
+    # Prompts (robust path resolution: absolute, as-is, then prefixed with "mechdiff/")
     if args.prompt_file:
         freeform_path = args.prompt_file
     else:
         freeform_path = pair.get("datasets", {}).get("freeform_file")
     prompts: List[str] = []
-    if freeform_path and os.path.exists(os.path.join("mechdiff", freeform_path)):
-        full = os.path.join("mechdiff", freeform_path)
-        with open(full, "r", encoding="utf-8") as f:
-            for line in f:
-                try:
-                    obj = json.loads(line)
-                    prompts.append(obj.get("text") or obj.get("prompt") or "")
-                except Exception:
-                    s = line.strip()
-                    if s:
-                        prompts.append(s)
+    if freeform_path:
+        candidates = []
+        # absolute or relative as-is
+        candidates.append(freeform_path)
+        # prefixed with repo subdir
+        candidates.append(os.path.join("mechdiff", freeform_path))
+        full = None
+        for pth in candidates:
+            if os.path.exists(pth):
+                full = pth
+                break
+        if full:
+            with open(full, "r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        obj = json.loads(line)
+                        prompts.append(obj.get("text") or obj.get("prompt") or "")
+                    except Exception:
+                        s = line.strip()
+                        if s:
+                            prompts.append(s)
     if args.min_shared_ratio >= 1.0:
         kept = filter_shared(prompts, tok_b, tok_t, shared)
     else:
@@ -230,7 +240,7 @@ def main():
             "base<-tuned": {"kl_mean": mean_b, "kl_std": std_b},
         }
 
-    out_dir = os.path.join("mechdiff", "artifacts", "rq1")
+    out_dir = os.path.join("mechdiff", "artifacts", "cognitive", "rq1")
     os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, "rq1_patch.json"), "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)

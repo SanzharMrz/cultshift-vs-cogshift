@@ -1,0 +1,12 @@
+{
+  "layer": 26,
+  "hook": "resid_post",
+  "k_positions": 1,
+  "solver": "procrustes_scaled",
+  "val_r2": -0.009167737144467836,
+  "train_r2": 1.6957397324213197e-05,
+  "cka_mapped_vs_tuned_val": 0.36406105756759644,
+  "cos_stats": null,
+  "pca_q": 1,
+  "map_path": "mechdiff/artifacts/cognitive/rq2/maps/rq2_clt_L26_resid_post_procrustes_scaled_20250828_195257.pt"
+}

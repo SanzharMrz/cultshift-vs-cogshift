@@ -1,0 +1,102 @@
+nice—this already tells a story. quick read of your table (cognitive, RQ2):
+
+* **L24 / resid\_post:** big **ΔKL drop ≈ 40.6%** (0.294 → 0.174) with **CKA ≈ 0.87** and **R² < 0**. That’s a strong, *directional* linear transport (scale still off—R² punishes amplitude). This is **stronger than cultural resid\_post** (там \~9–13%).
+* **L26 / mlp\_out:** **ΔKL ≈ 12.9%** (0.992 → 0.865). Helpful but smaller.
+* **L30 / mlp\_out:** small negative (−2.8%) → mapping hurts; probably wrong site/scale late-late.
+* **L10 / resid\_post:** big negative (−54%) → early layers shouldn’t help (sanity check passes).
+* **NaNs** for L26/L30 attn\_out & resid\_post mean your mapped-patch didn’t run (or the aggregator didn’t find files), not that the maps failed—CKA is there.
+
+### What this means vs. our hypothesis
+
+* We expected cognitive to be “more distributed / higher rank” than cultural.
+* RQ2 says: **there *is* a strong linear channel at L24/resid\_post in cognitive** (40%+ ΔKL). That doesn’t kill the hypothesis; it just means you need **RQ3 rank-k** and **RQ4 head coverage** to check if cognitive needs **more rank / more heads** than cultural’s k≈1.
+
+---
+
+## Fill the missing cells (fast)
+
+Run mapped-patch for the rows with NaN (same α protocol you used for others; if you didn’t sweep α, use `0.3, 0.5, 0.7, 1.0` and keep the best per (layer,hook)).
+
+```bash
+# L26 attn_out
+MAP_PT=$(python - <<'PY'
+import json,glob
+j=sorted(glob.glob("mechdiff/artifacts/cognitive/rq2/rq2_clt_L26_*attn_out*procrustes_scaled*.json"))[-1]
+print(json.load(open(j))["map_path"])
+PY
+)
+for A in 0.3 0.5 0.7 1.0; do
+  python -m mechdiff.experiments.cognitive.rq2.run_rq2_mapped_patch \
+    --pair mechdiff/pairs/pair_cognitive.py \
+    --layer 26 --hook attn_out --k1_decision --alpha $A \
+    --map_file "$MAP_PT"
+done
+
+# L26 resid_post
+MAP_PT=$(python - <<'PY'
+import json,glob
+j=sorted(glob.glob("mechdiff/artifacts/cognitive/rq2/rq2_clt_L26_*resid_post*procrustes_scaled*.json"))[-1]
+print(json.load(open(j))["map_path"])
+PY
+)
+for A in 0.3 0.5 0.7 1.0; do
+  python -m mechdiff.experiments.cognitive.rq2.run_rq2_mapped_patch \
+    --pair mechdiff/pairs/pair_cognitive.py \
+    --layer 26 --hook resid_post --k1_decision --alpha $A \
+    --map_file "$MAP_PT"
+done
+
+# L30 attn_out
+MAP_PT=$(python - <<'PY'
+import json,glob
+j=sorted(glob.glob("mechdiff/artifacts/cognitive/rq2/rq2_clt_L30_*attn_out*procrustes_scaled*.json"))[-1]
+print(json.load(open(j))["map_path"])
+PY
+)
+for A in 0.3 0.5 0.7 1.0; do
+  python -m mechdiff.experiments.cognitive.rq2.run_rq2_mapped_patch \
+    --pair mechdiff/pairs/pair_cognitive.py \
+    --layer 30 --hook attn_out --k1_decision --alpha $A \
+    --map_file "$MAP_PT"
+done
+
+# L30 resid_post
+MAP_PT=$(python - <<'PY'
+import json,glob
+j=sorted(glob.glob("mechdiff/artifacts/cognitive/rq2/rq2_clt_L30_*resid_post*procrustes_scaled*.json"))[-1]
+print(json.load(open(j))["map_path"])
+PY
+)
+for A in 0.3 0.5 0.7 1.0; do
+  python -m mechdiff.experiments.cognitive.rq2.run_rq2_mapped_patch \
+    --pair mechdiff/pairs/pair_cognitive.py \
+    --layer 30 --hook resid_post --k1_decision --alpha $A \
+    --map_file "$MAP_PT"
+done
+```
+
+**What to keep** after this: best `% drop` per (layer,hook). If anything beats **L24/resid\_post 40.6%**, note it as the winner.
+
+---
+
+## What to write in the journal now
+
+> **RQ2 (cognitive, MATH-500 prompts).**
+> Linear cross-model transport shows a **strong late-layer channel**: at **L24/resid\_post** the mapped-patch reduces next-token KL by **≈40.6%** (0.294 → 0.174) despite **R²<0**; **CKA≈0.87** confirms directional alignment with scale mismatch. **L26/mlp\_out** is moderate (**≈12.9%**), while **L30/mlp\_out** and early layers are neutral/negative (−2.8%, −54%), as expected.
+> **Interpretation:** math tuning introduces a robust, *linearly transportable* late-layer shift (stronger than cultural resid\_post). To test whether cognitive is **more distributed**, we proceed to **RQ3 rank-k** and **RQ4 head-level coverage** and compare the rank/heads needed to match the full effect.
+
+---
+
+## Next (minimal to close RQ2 & set up RQ3/RQ4)
+
+1. **Freeze winners** for cognitive (copy best `.pt` into `mechdiff/artifacts/cognitive/rq2/best/` with stable names, e.g., `best_L24_resid_post.pt`, `best_L26_mlp_out.pt`).
+2. **Rank-k sweep (RQ3)** on the **best cognitive site** (start with L24/resid\_post). Expectation per hypothesis: **needs higher k than cultural** (where k≈1 already covered ≈100%).
+3. **Head coverage (RQ4)** at the best **attn\_out** layer (likely 26 or 30 after you fill NaNs). Expectation: **more than 1–2 heads** to reach \~100% full coverage, unlike cultural where a single head ≈100%.
+
+---
+
+### Why cos=NaN?
+
+Your aggregator didn’t parse `cos_stats` (or that field wasn’t saved in these runs). It’s fine—KL is your causal metric. If you want, add cosine↔ΔKL correlation later; not blocking.
+
+Ping me with the filled NaNs (the four blocks above) and I’ll help you finalize the one-liner and the tiny table for the report.

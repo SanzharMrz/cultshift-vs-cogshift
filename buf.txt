@@ -1,0 +1,76 @@
+=== L=24 H=resid_post ===
+-- K=1 --
+candidates=11
+meta_json=mechdiff/artifacts/cognitive/rq2/rq2_clt_L24_resid_post_procrustes_scaled_20250828_183342.json
+pca_q=1
+map_path=mechdiff/artifacts/cognitive/rq2/maps/rq2_clt_L24_resid_post_procrustes_scaled_20250828_183342.pt
+map_exists=true size=201396174 md5=97c99db8be157ab5d0bce8b8cadbff4f
+-- K=8 --
+candidates=11
+meta_json=mechdiff/artifacts/cognitive/rq2/rq2_clt_L24_resid_post_procrustes_scaled_20250828_183706.json
+pca_q=8
+map_path=mechdiff/artifacts/cognitive/rq2/maps/rq2_clt_L24_resid_post_procrustes_scaled_20250828_183706.pt
+map_exists=true size=201396174 md5=a165e6649dabd5763f21d0f2674c7704
+-- K=32 --
+candidates=11
+meta_json=mechdiff/artifacts/cognitive/rq2/rq2_clt_L24_resid_post_procrustes_scaled_20250828_184029.json
+pca_q=32
+map_path=mechdiff/artifacts/cognitive/rq2/maps/rq2_clt_L24_resid_post_procrustes_scaled_20250828_184029.pt
+map_exists=true size=201396174 md5=32f400b00853e523a98b9e25ec3d795f
+-- K=0 --
+candidates=11
+meta_json=mechdiff/artifacts/cognitive/rq2/rq2_clt_L24_resid_post_procrustes_scaled_20250828_184349.json
+pca_q=0
+map_path=mechdiff/artifacts/cognitive/rq2/maps/rq2_clt_L24_resid_post_procrustes_scaled_20250828_184349.pt
+map_exists=true size=201396174 md5=ad10256887c8a602efb3113a3afee158
+=== L=26 H=resid_post ===
+-- K=1 --
+candidates=12
+meta_json=mechdiff/artifacts/cognitive/rq2/rq2_clt_L26_resid_post_procrustes_scaled_20250828_184706.json
+pca_q=1
+map_path=mechdiff/artifacts/cognitive/rq2/maps/rq2_clt_L26_resid_post_procrustes_scaled_20250828_184706.pt
+map_exists=true size=201396174 md5=7889c62788fe5f477cacb8e798dfe694
+-- K=8 --
+candidates=12
+meta_json=mechdiff/artifacts/cognitive/rq2/rq2_clt_L26_resid_post_procrustes_scaled_20250828_185021.json
+pca_q=8
+map_path=mechdiff/artifacts/cognitive/rq2/maps/rq2_clt_L26_resid_post_procrustes_scaled_20250828_185021.pt
+map_exists=true size=201396174 md5=3ce406d0775a9014c1e3e5263936e20c
+-- K=32 --
+candidates=12
+meta_json=mechdiff/artifacts/cognitive/rq2/rq2_clt_L26_resid_post_procrustes_scaled_20250828_185341.json
+pca_q=32
+map_path=mechdiff/artifacts/cognitive/rq2/maps/rq2_clt_L26_resid_post_procrustes_scaled_20250828_185341.pt
+map_exists=true size=201396174 md5=18a9e5370196ffed425f89414a635c5b
+-- K=0 --
+candidates=12
+meta_json=mechdiff/artifacts/cognitive/rq2/rq2_clt_L26_resid_post_procrustes_scaled_20250828_185700.json
+pca_q=0
+map_path=mechdiff/artifacts/cognitive/rq2/maps/rq2_clt_L26_resid_post_procrustes_scaled_20250828_185700.pt
+map_exists=true size=201396174 md5=f38c1a583210904ccb1d791c476b812c
+=== L=30 H=resid_post ===
+-- K=1 --
+candidates=16
+meta_json=mechdiff/artifacts/cognitive/rq2/rq2_clt_L30_resid_post_procrustes_scaled_20250828_190018.json
+pca_q=1
+map_path=mechdiff/artifacts/cognitive/rq2/maps/rq2_clt_L30_resid_post_procrustes_scaled_20250828_190018.pt
+map_exists=true size=201396174 md5=30df3e7b9b0488751993b027a46e6473
+-- K=8 --
+candidates=16
+meta_json=mechdiff/artifacts/cognitive/rq2/rq2_clt_L30_resid_post_procrustes_scaled_20250828_190337.json
+pca_q=8
+map_path=mechdiff/artifacts/cognitive/rq2/maps/rq2_clt_L30_resid_post_procrustes_scaled_20250828_190337.pt
+map_exists=true size=201396174 md5=559e8372b643ad105d2036e7a85181e0
+-- K=32 --
+candidates=16
+meta_json=mechdiff/artifacts/cognitive/rq2/rq2_clt_L30_resid_post_procrustes_scaled_20250828_190653.json
+pca_q=32
+map_path=mechdiff/artifacts/cognitive/rq2/maps/rq2_clt_L30_resid_post_procrustes_scaled_20250828_190653.pt
+map_exists=true size=201396174 md5=ad5efe4f8fced9be00b5b5ceca975f80
+-- K=0 --
+candidates=16
+meta_json=mechdiff/artifacts/cognitive/rq2/rq2_clt_L30_resid_post_procrustes_scaled_20250828_191011.json
+pca_q=0
+map_path=mechdiff/artifacts/cognitive/rq2/maps/rq2_clt_L30_resid_post_procrustes_scaled_20250828_191011.pt
+map_exists=true size=201396174 md5=6608d0e100a6bec725095817db8b2213
+Done.

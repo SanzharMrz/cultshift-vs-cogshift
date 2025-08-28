@@ -1,0 +1,11 @@
+{
+  "layer": 26,
+  "hook": "mlp_out",
+  "k_positions": 1,
+  "solver": "procrustes_scaled",
+  "val_r2": -0.733836414876631,
+  "train_r2": 0.9999358270611596,
+  "cka_mapped_vs_tuned_val": 0.750709056854248,
+  "cos_stats": null,
+  "map_path": "mechdiff/artifacts/cognitive/rq2/maps/rq2_clt_L26_mlp_out_procrustes_scaled_20250828_134026.pt"
+}

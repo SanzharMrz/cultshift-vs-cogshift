@@ -1,0 +1,155 @@
+Got it—here’s a **tight, loopable RQ2 plan for the cognitive pair** (OpenMath2 vs base), with exactly what to run, what files get produced, and how to summarize + read them. It auto-picks layers from your RQ1 CKA.
+
+---
+
+# RQ2 (Cognitive) — Cursor Checklist
+
+
+```bash
+LAYERS="10,24,26,30"
+```
+
+## 1) Train CLT maps (per layer × hook)
+
+Run **K=1 (last content token)**, **Procrustes-scaled** with shrinkage. Hooks: `resid_post` for all layers; also `attn_out` and `mlp_out` for late layers (26/30).
+
+```bash
+PAIR="mechdiff/pairs/pair_cognitive.py"
+
+# resid_post on all selected layers
+for L in ${LAYERS//,/ }; do
+  python -m mechdiff.experiments.rq2.run_rq2_clt \
+    --pair "$PAIR" --layer $L --hook resid_post \
+    --k1_decision --solver procrustes_scaled --shrink 0.05 --alpha auto
+done
+
+# components on late layers (edit if your auto-picked set differs)
+for L in 26 30; do
+  python -m mechdiff.experiments.rq2.run_rq2_clt \
+    --pair "$PAIR" --layer $L --hook attn_out \
+    --k1_decision --solver procrustes_scaled --shrink 0.05 --alpha auto
+  python -m mechdiff.experiments.rq2.run_rq2_clt \
+    --pair "$PAIR" --layer $L --hook mlp_out \
+    --k1_decision --solver procrustes_scaled --shrink 0.05 --alpha auto
+done
+```
+
+## 2) Mapped-patch (evaluate causal transport)
+
+For each (layer,hook), grab the newest CLT JSON, pull its `map_path`, and run mapped-patch on **val**.
+
+```bash
+# helper: get map bundle for (L, hook)
+get_map_pt () {
+python - "$1" "$2" <<'PY'
+import sys,glob,json,os
+L, hook = sys.argv[1], sys.argv[2]
+cands = sorted(glob.glob(f"mechdiff/artifacts/rq2/rq2_clt_L{L}_*procrustes_scaled*.json"))
+for j in reversed(cands):
+    d = json.load(open(j))
+    if d.get("layer")==int(L) and d.get("hook")==hook and d.get("k_positions")==1:
+        mp=d.get("map_path"); 
+        if mp and os.path.exists(mp): 
+            print(mp); break
+PY
+}
+
+mkdir -p mechdiff/artifacts/cognitive/rq2
+
+eval_and_save () {
+  L=$1; H=$2
+  MAP_PT=$(get_map_pt $L $H)
+  python -m mechdiff.experiments.rq2.run_rq2_mapped_patch \
+    --pair "$PAIR" --layer $L --hook $H --k1_decision --split val \
+    --map_file "$MAP_PT"
+  # move the latest mapped result into cognitive bucket
+  LAST=$(ls -1t mechdiff/artifacts/rq2/mapped_patch_*.json | head -n1)
+  cp "$LAST" "mechdiff/artifacts/cognitive/rq2/$(basename ${LAST%.*})_cognitive.json"
+}
+
+# resid_post for all layers
+for L in ${LAYERS//,/ }; do eval_and_save $L resid_post; done
+# components for late layers
+for L in 26 30; do eval_and_save $L attn_out; eval_and_save $L mlp_out; done
+```
+
+## 3) One-shot summary (table)
+
+This collates **CLT** (R², CKA, cosine) and **mapped-patch** (KL raw/mapped, drop%).
+
+```bash
+python - <<'PY'
+import glob, json, os, math
+def loadj(p): 
+    with open(p,'r',encoding='utf-8') as f: return json.load(f)
+
+# Collect CLT
+clt = []
+for j in glob.glob("mechdiff/artifacts/rq2/rq2_clt_L*_procrustes_scaled_*.json"):
+    d = loadj(j)
+    if d.get("k_positions")!=1: continue
+    clt.append(dict(layer=d["layer"], hook=d["hook"], solver=d["solver"],
+                    val_r2=d.get("val_r2"), cka=d.get("cka_mapped_vs_tuned_val"),
+                    cos_mean=(d.get("cos_stats") or {}).get("mean"), path=j))
+
+# Collect mapped-patch (cognitive bucket)
+mp = []
+for j in glob.glob("mechdiff/artifacts/cognitive/rq2/mapped_patch_*.json"):
+    d = loadj(j)
+    kr, km = d.get("KL_raw_mean"), d.get("KL_mapped_mean")
+    drop = (kr-km)/kr*100 if (isinstance(kr,(int,float)) and isinstance(km,(int,float)) and kr>0) else float('nan')
+    mp.append(dict(layer=d["layer"], hook=d["hook"], kr=kr, km=km, drop=drop, path=j))
+
+# Join on (layer,hook)
+rows=[]
+for c in clt:
+    m=[x for x in mp if x["layer"]==c["layer"] and x["hook"]==c["hook"]]
+    best = max(m, key=lambda x: (x["drop"] if x["drop"]==x["drop"] else -1e9), default=None)
+    rows.append((c["layer"], c["hook"], c["val_r2"], c["cka"], c["cos_mean"], 
+                 None if not best else best["kr"], None if not best else best["km"], 
+                 None if not best else best["drop"]))
+
+rows.sort(key=lambda r:(r[0], r[1]))
+print(f"{'L':>3}  {'hook':<10}  {'R2':>7}  {'CKA':>6}  {'cos':>6}  {'KL_raw':>8}  {'KL_map':>8}  {'drop%':>7}")
+for L,H,R2,CKA,COS,KR,KM,DP in rows:
+    def fmt(x): 
+        return "nan" if (x is None or (isinstance(x,float) and math.isnan(x))) else f"{x:.3f}"
+    print(f"{L:>3}  {H:<10}  {fmt(R2):>7}  {fmt(CKA):>6}  {fmt(COS):>6}  {fmt(KR):>8}  {fmt(KM):>8}  {fmt(DP):>7}")
+
+os.makedirs("mechdiff/artifacts/cognitive/rq2", exist_ok=True)
+with open("mechdiff/artifacts/cognitive/rq2/summary.txt","w") as f:
+    f.write("See console table above.\n")
+PY
+```
+
+---
+
+## How to read the results (quick)
+
+* **CLT fit (alignment):**
+
+  * If **CKA(mapped,tuned) / cosine** are **high (≥0.4–0.6)** but **val R² ≤ 0**, that means the map gets the **direction** but not the **scale**—same pattern you saw culturally.
+  * If all three are low, base→tuned is not globally linear at that hook/layer.
+
+* **Mapped-patch (causal transport):**
+  Look at **drop% = 100·(KL\_raw − KL\_mapped)/KL\_raw**.
+
+  * **Large drop (≥15–30%)** ⇒ strong transportability (good).
+  * **Small (0–10%)** or **negative** ⇒ weak or harmful mapping at that site.
+
+* **Hooks vs layers:**
+
+  * If **attn\_out @ late layers (26/30)** gives the biggest drop, math changes are **attention-centric**.
+  * If **mlp\_out** wins, it’s **MLP-centric**.
+  * Compare to cultural numbers you already have to infer **rank/dispersion differences** in RQ3/RQ4.
+
+---
+
+## What to paste in your journal now
+
+* **Setup (cognitive RQ2):** Used MATH-500 curated prompts (reasoning-heavy, 2–4 ops, no diagrams). Layers chosen from RQ1 **lowest CKA** + early control. K=1, `resid_post` everywhere; `attn_out`/`mlp_out` on late layers. Solver: **Procrustes-scaled, shrink=0.05**.
+* **Artifacts:** `mechdiff/artifacts/rq2/*` (raw) and copies in `mechdiff/artifacts/cognitive/rq2/*` (mapped-patch JSON). Summary: `mechdiff/artifacts/cognitive/rq2/summary.txt`.
+* **Success criteria:** (i) non-trivial **CKA/cosine** at L26/L30; (ii) **ΔKL drop** notably > control layer; (iii) hook ranking (attn vs mlp) is clear.
+* **Interpretation plan:** If ΔKL is **smaller** than cultural and needs components to match, that argues **higher-rank / more distributed** cognitive changes. If it’s **similar or larger** and low-rank, that’s a surprising counter-result.
+
+That’s it—drop these blocks into Cursor and let it run end-to-end.

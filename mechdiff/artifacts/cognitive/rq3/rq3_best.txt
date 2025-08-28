@@ -1,0 +1,6 @@
+Best per (layer,hook)
+
+layer hook        alpha   KL_raw   KL_mapped     Δ     drop%   file
+   24 resid_post   0.8     0.294       0.172     0.122    41.5  mapped_patch_L24_resid_post_kfull_alpha0.8.json
+   26 resid_post   1.0     0.343       0.206     0.138    40.1  mapped_patch_L26_resid_post_kfull_alpha1.0.json
+   30 resid_post   1.0     0.484       0.245     0.239    49.4  mapped_patch_L30_resid_post_kfull_alpha1.0.json

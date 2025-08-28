@@ -30,12 +30,6 @@ def load_pair(pair_path: str):
     return mod.PAIR
 
 
-REFUSAL_PATTERNS = [
-    r"\bI (?:can(?:not|'t)|am unable|will not|must not)\b",
-    r"\bмен (?:жасай алмаймын|қолымнан келмейді|жауап бере алмаймын)\b",
-    r"\bжауап бере алмаймын\b",
-    r"\bя (?:не могу|не буду|не в состоянии)\b",
-]
 
 
 def normalize_text(s: str) -> str:
@@ -235,7 +229,7 @@ def main():
         "style_markers_per100_unmasked_base": round(style_per100_b, 3),
         "style_markers_per100_unmasked_tuned": round(style_per100_t, 3),
     }
-    out_dir = os.path.join("mechdiff", "artifacts", "rq1")
+    out_dir = os.path.join("mechdiff", "artifacts", "cognitive", "rq1")
     os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, "rq1_behavior.json"), "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
