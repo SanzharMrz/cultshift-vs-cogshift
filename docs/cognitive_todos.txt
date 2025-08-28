@@ -1,0 +1,216 @@
+# 1) Prep prompts for cognitive RQ2 (train/val)
+
+```bash
+# Generates mechdiff/data/rq2/train_prompts.jsonl and val_prompts.jsonl for the cognitive pair
+python scripts/prep_prompts_rq2.py --pair mechdiff/pairs/pair_cognitive.py --split train --n 450
+python scripts/prep_prompts_rq2.py --pair mechdiff/pairs/pair_cognitive.py --split val   --n 150
+```
+
+(If your prep script also supports free-form cognitive prompts, great. If not, this still gives you consistent train/val for RQ2 & mapped-patch.)
+
+---
+
+# 2) RQ1 baseline (discover layers from CKA)
+
+```bash
+python -m mechdiff.experiments.rq1.run_rq1_baseline \
+  --pair mechdiff/pairs/pair_cognitive.py \
+  --prompt_file mechdiff/data/rq2/train_prompts.jsonl \
+  --hook resid_post \
+  --min_shared_ratio 1.0  # shared tokenizer; keep fairness on
+```
+
+Copy/namespace the artifact so cultural vs cognitive never collide:
+
+```bash
+mkdir -p mechdiff/artifacts/cognitive/rq1
+cp mechdiff/artifacts/rq1/rq1_cka.json mechdiff/artifacts/cognitive/rq1/rq1_cka.json
+```
+
+Pick layers **from the CKA you just computed**: take the 2–3 **lowest-CKA** late layers + 1 **high-CKA** control.
+
+```bash
+python - <<'PY'
+import json, numpy as np, os
+d=json.load(open("mechdiff/artifacts/cognitive/rq1/rq1_cka.json"))
+# d is {layer(str): cka(float)}
+items=sorted([(int(k),v) for k,v in d.items()])
+layers=[L for L,_ in items]
+ckas=np.array([v for _,v in items])
+# indices of 2 lowest CKA (late) and 1 highest (control)
+low_idx=ckas.argsort()[:2].tolist()
+hi_idx=int(ckas.argmax())
+sel_late=[layers[i] for i in low_idx]
+ctrl=[layers[hi_idx]]
+out={"late":sorted(sel_late), "control":ctrl}
+os.makedirs("mechdiff/artifacts/cognitive/rq1", exist_ok=True)
+json.dump(out, open("mechdiff/artifacts/cognitive/rq1/candidate_layers.json","w"), indent=2)
+print(out)
+PY
+```
+
+Optional sanity (causal cross-patch at those layers):
+
+```bash
+LAYERS=$(python - <<'PY'
+import json; d=json.load(open("mechdiff/artifacts/cognitive/rq1/candidate_layers.json"))
+print(",".join(map(str, sorted(set(d["late"]+d["control"])))))
+PY
+)
+python -m mechdiff.experiments.rq1.run_rq1_patch \
+  --pair mechdiff/pairs/pair_cognitive.py \
+  --layers $LAYERS --hook resid_post --k1_decision
+mkdir -p mechdiff/artifacts/cognitive/rq1
+cp mechdiff/artifacts/rq1/rq1_patch*.json mechdiff/artifacts/cognitive/rq1/ 2>/dev/null || true
+```
+
+**What to look at now:** confirm late layers (from CKA dip) also give larger cross-patch KL than the control layer.
+
+---
+
+# 3) RQ2 — CLT maps only for the layers you just discovered
+
+Train CLT on **K=1 decision token**, for **each selected layer** and **each hook**:
+
+```bash
+for L in $(python - <<'PY'
+import json; d=json.load(open("mechdiff/artifacts/cognitive/rq1/candidate_layers.json"))
+print(" ".join(map(str, sorted(set(d["late"]+d["control"])))))
+PY
+); do
+  for H in resid_post attn_out mlp_out; do
+    python -m mechdiff.experiments.rq2.run_rq2_clt \
+      --pair mechdiff/pairs/pair_cognitive.py \
+      --layer $L --hook $H --k1_decision \
+      --solver procrustes_scaled --shrink 0.05 --alpha auto
+  done
+done
+
+mkdir -p mechdiff/artifacts/cognitive/rq2
+cp mechdiff/artifacts/rq2/rq2_clt_*.json mechdiff/artifacts/cognitive/rq2/ 2>/dev/null || true
+```
+
+Then run **mapped-patch** to get ΔKL (did your map actually help?):
+
+```bash
+for L in $(python - <<'PY'
+import json; d=json.load(open("mechdiff/artifacts/cognitive/rq1/candidate_layers.json"))
+print(" ".join(map(str, sorted(set(d["late"]+d["control"])))))
+PY
+); do
+  for H in resid_post attn_out mlp_out; do
+    MAP_PT=$(python - <<PY
+import json,glob
+c=sorted(glob.glob(f"mechdiff/artifacts/rq2/rq2_clt_L{L}_*{H}*procrustes_scaled*.json"))
+print(json.load(open(c[-1]))["map_path"])
+PY
+)
+    python -m mechdiff.experiments.rq2.run_rq2_mapped_patch \
+      --pair mechdiff/pairs/pair_cognitive.py \
+      --layer $L --hook $H --k1_decision \
+      --map_file "$MAP_PT" --split val
+  done
+done
+
+cp mechdiff/artifacts/rq2/mapped_patch_*.json mechdiff/artifacts/cognitive/rq2/ 2>/dev/null || true
+```
+
+**What to look at:** for which (layer, hook) does **KL\_mapped < KL\_raw** and by how much (%)? This is your cognitive counterpart to cultural **transportability**.
+
+---
+
+# 4) RQ3 — α and rank (only where RQ2 showed a good drop)
+
+First, find the **best** (layer,hook) by ΔKL from the cognitive mapped-patch JSONs:
+
+```bash
+python - <<'PY'
+import glob,json,math
+best=None
+for p in glob.glob("mechdiff/artifacts/cognitive/rq2/mapped_patch_*.json"):
+    d=json.load(open(p))
+    kr,km=d.get("KL_raw_mean"),d.get("KL_mapped_mean")
+    if kr is None or km is None: 
+        continue
+    drop=(kr-km)/max(1e-9,kr)
+    if (best is None) or (drop>best[0]):
+        best=(drop, d["layer"], d["hook"], p)
+print({"best_drop":best[0] if best else None, "layer":best[1] if best else None, "hook":best[2] if best else None, "file":best[3] if best else None})
+PY
+```
+
+Now **α-sweep** there (and maybe 1–2 runners-up):
+
+```bash
+# Example: substitute the layer/hook printed above
+python -m mechdiff.experiments.rq3.run_rq3_alpha_sweep \
+  --pair mechdiff/pairs/pair_cognitive.py \
+  --layers <BEST_LAYER> \
+  --hooks <BEST_HOOK> \
+  --alphas 0.3,0.5,0.7,1.0 --k1_decision
+
+mkdir -p mechdiff/artifacts/cognitive/rq3
+cp mechdiff/artifacts/rq3/*.json mechdiff/artifacts/cognitive/rq3/ 2>/dev/null || true
+cp mechdiff/artifacts/rq3/*.txt  mechdiff/artifacts/cognitive/rq3/ 2>/dev/null || true
+```
+
+**Rank-sweep** (does cognitive need higher k?):
+
+```bash
+python -m mechdiff.experiments.rq3.run_rq3_rank_sweep \
+  --pair mechdiff/pairs/pair_cognitive.py \
+  --layer <BEST_LAYER> --hook <BEST_HOOK> \
+  --alphas <BEST_ALPHA_FROM_SWEEP> \
+  --ranks 1,8,32,full --k1_decision
+
+cp mechdiff/artifacts/rq3/*rank*.json mechdiff/artifacts/cognitive/rq3/ 2>/dev/null || true
+```
+
+**Interpretation key:**
+
+* If **k=1** or **k=8** already gets near the full ΔKL → **low-rank** cognitive change (surprising if similar to cultural).
+* If you need **k=32/full** → **distributed** change (what we hypothesized).
+
+---
+
+# 5) RQ4 — Head coverage (only after you pick a (layer,hook,α))
+
+Use your RQ4 script, but **set its constants** to the selected (layer, hook, α) for *cognitive*. Then run:
+
+```bash
+# Edit mechdiff/experiments/rq4/run_and_summarize.py:
+#   PAIR = "mechdiff/pairs/pair_cognitive.py"
+#   LAYER_MAIN = <BEST_LAYER_FROM_RQ3>
+#   HOOK = "<BEST_HOOK_FROM_RQ3>"
+#   ALPHA = <BEST_ALPHA_FROM_RQ3>
+# Save, then:
+python mechdiff/experiments/rq4/run_and_summarize.py
+mkdir -p mechdiff/artifacts/cognitive/rq4
+cp mechdiff/artifacts/rq4/* mechdiff/artifacts/cognitive/rq4/ 2>/dev/null || true
+```
+
+**Readout:** compare **coverage%** for **top-1, top-2, top-4, top-8** heads vs random-k, **relative to RAW ΔKL**.
+
+* Cultural: top-1 at L26/attn\_out hit \~100% coverage → **highly localized**.
+* Cognitive: if top-1 ≪ 100% and you need many heads → **distributed**.
+
+---
+
+## FAQ
+
+**Q: Is the “cultural approach” (CKA→CLT→mapped-patch→α/rank→RQ4) valid for cognitive?**
+**Yes.** It’s the same backbone; the steps are model-agnostic. The only thing that changes is *where* the divergence shows up (CKA) and *how* easily it transports (k, α, head coverage).
+
+**Q: Do we *have* to use the CKA-based layer pick?**
+Yes—that’s the point of RQ1. It guards against us cherry-picking layers and keeps the comparison fair. You can still add one high-CKA control.
+
+---
+
+## What to write in your journal (as you go)
+
+* **RQ1 (cognitive):** paste the CKA curve and list the selected layers (lowest CKA) + control; one sentence on cross-patch KL confirming late-layer causality.
+* **RQ2:** per selected layer/hook, record **val R², CKA(mapped,tuned), cosine**, and **ΔKL%**. Note which hooks actually help (mapped < raw).
+* **RQ3:** report **best α** and **rank-k curve** (k=1/8/32/full) for the best (layer,hook). One line: “Cognitive needs k=… to reach …% of full.”
+* **RQ4:** head-coverage table (top-k vs random-k). One line: “Cognitive coverage by top-1 is …% (cultural ≈100%), implying \[distributed | localized] shift.”
+
+That’s it—no exports, no fixed layers. Everything is discovered from **your RQ1 cognitive baseline** and written to `mechdiff/artifacts/cognitive/...`.
