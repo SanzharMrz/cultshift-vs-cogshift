@@ -1,0 +1,112 @@
+Awesome—time to wrap **RQ4 (cognitive)** cleanly. Below is a *drop-in* set of notes for Cursor that (1) switches the pipeline to the cognitive pair, (2) reuses your existing cognitive RQ2 maps (full-rank), and (3) adapts the RQ4 head-masking so we can localize the effect even though the best CLT hook is **resid\_post**.
+
+---
+
+# RQ4 (cognitive) — what to run, what to expect
+
+## TL;DR
+
+* **Main target:** `L=30 / resid_post` (strongest RQ1/RQ2 signal).
+* **Secondary (optional):** `L=26 / resid_post`, `L=24 / resid_post`.
+* **Head-masking hook:** always at **`attn_out`** of the *same layer* (we mask heads **before** the block writes to `resid_post`).
+* **Maps:** use **cognitive** RQ2 **full-rank** Procrustes maps already produced (k=full).
+* **Expected outcome (cognitive):**
+
+  * No single head reproduces the full effect (single-head coverage ≪ 100%).
+  * Coverage grows with k, but **top-k ≈ random-k** (small gap) → **distributed change**.
+  * Control layer has \~0 coverage.
+
+---
+
+## 0) One-time: confirm full-rank CLT maps exist (reuse if present)
+
+If you already ran full-rank maps under cognitive RQ2, reuse them. Otherwise run:
+
+```bash
+for L in 30 26 24; do
+  python -m mechdiff.experiments.cognitive.rq2.run_rq2_clt \
+    --pair mechdiff/pairs/pair_cognitive.py \
+    --layer $L --hook resid_post \
+    --k1_decision --solver procrustes_scaled --pca 0 \
+    --shrink 0.05 --device cuda
+done
+```
+
+This writes JSON + `.pt` bundles under:
+
+```
+mechdiff/artifacts/cognitive/rq2/
+  - rq2_clt_L{L}_resid_post_procrustes_scaled_*.json (with map_path → .../maps/*.pt)
+```
+
+> If multiple timestamps exist, we’ll pick the best by `cka_mapped_vs_tuned_val` (fallback to freshest).
+
+---
+
+## 1) Run head-masked RQ4 for cognitive
+
+### Why two hooks?
+
+* **FULL denominator**: mapped patch at **`resid_post`** (k=full) — measures the *total* effect we want to “explain”.
+* **Head masks**: raw patch at **`attn_out`** — lets us turn on just some attention heads and see how much of the total effect they account for.
+
+### Start a single nohup job
+
+```bash
+mkdir -p mechdiff/logs
+
+nohup bash -c '
+  # (Optional) ensure maps exist – see step 0
+
+  # Run the cognitive RQ4 driver (see script below)
+  stdbuf -oL -eL python mechdiff/experiments/cognitive/rq4/run_and_summarize_cognitive.py
+' > mechdiff/logs/rq4_cognitive_$(date +%F_%H%M%S).log 2>&1 &
+
+echo $! > mechdiff/logs/rq4_cognitive.pid
+```
+
+### Use this RQ4 driver (adapted)
+
+mechdiff/experiments/cognitive/rq4/run_and_summarize_cognitive.py
+
+> Notes:
+>
+> * Paths point to `mechdiff/artifacts/**cognitive**/...`.
+> * `latest_map_json()` filters to **`pca_q==0`** (full-rank).
+> * Denominator is **mapped patch at `resid_post`**; head masks operate at **`attn_out`**.
+
+---
+
+## 2) What “good” cognitive results look like
+
+* **Single-head coverage:** low. A single head rarely exceeds **\~10–30%** of the FULL mapped effect.
+* **top-k vs random-k:** **small gap**; top-k not dramatically better than random-k → **distributed** contribution.
+* **Growth with k:** coverage increases roughly with k but **doesn’t saturate** at k≤8.
+* **Control:** FULL at an early layer \~0.
+
+This is the *opposite* of cultural, where one or two heads at L26/attn\_out hit **\~100%** coverage.
+
+---
+
+## 3) Reuse vs re-run + timestamp handling
+
+* You **can reuse** existing cognitive CLT artifacts; the driver above **auto-selects** the best JSON by **highest `cka_mapped_vs_tuned_val`** (ties → newest).
+* If you want stable filenames for the paper, create aliases:
+
+  ```bash
+  mkdir -p mechdiff/artifacts/cognitive/rq2/best
+  cp mechdiff/artifacts/cognitive/rq2/maps/rq2_clt_L30_resid_post_procrustes_scaled_*.pt \
+     mechdiff/artifacts/cognitive/rq2/best/best_L30_resid_post.pt
+  ```
+
+  Then hardcode `map_file` if you prefer.
+
+---
+
+### Sanity checklist (quick)
+
+* Full map exists for `L30/resid_post (pca_q=0)` and reduces KL (Δ>0).
+* Any low-rank (k≤32) map **degrades** KL (Δ<0) → high-rank.
+* Single-head Δ’s << FULL Δ; top-k and random-k close.
+
+If you hit anything weird, dump the per-head table and we’ll read it together.

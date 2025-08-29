@@ -1,0 +1,25 @@
+FULL RAW (ALL heads) @ L30/attn_out: KL_raw(full)=0.006105  (head_mask_L30_attn_out_ALL.json)
+
+Top single-head masks by coverage% (KL_selected / KL_full):
+  head_mask_L30_attn_out_19.json         KL_sel= 0.001537  cover= 25.18%
+  head_mask_L30_attn_out_30.json         KL_sel= 0.000598  cover=  9.79%
+  head_mask_L30_attn_out_25.json         KL_sel= 0.000507  cover=  8.31%
+  head_mask_L30_attn_out_14.json         KL_sel= 0.000423  cover=  6.93%
+  head_mask_L30_attn_out_18.json         KL_sel= 0.000191  cover=  3.13%
+  head_mask_L30_attn_out_27.json         KL_sel= 0.000187  cover=  3.07%
+  head_mask_L30_attn_out_11.json         KL_sel= 0.000145  cover=  2.37%
+  head_mask_L30_attn_out_26.json         KL_sel= 0.000105  cover=  1.73%
+  head_mask_L30_attn_out_9.json          KL_sel= 0.000105  cover=  1.72%
+  head_mask_L30_attn_out_15.json         KL_sel= 0.000105  cover=  1.72%
+  head_mask_L30_attn_out_12.json         KL_sel= 0.000090  cover=  1.47%
+  head_mask_L30_attn_out_0.json          KL_sel= 0.000085  cover=  1.39%
+  head_mask_L30_attn_out_2.json          KL_sel= 0.000067  cover=  1.10%
+  head_mask_L30_attn_out_1.json          KL_sel= 0.000045  cover=  0.74%
+  head_mask_L30_attn_out_29.json         KL_sel= 0.000043  cover=  0.71%
+  head_mask_L30_attn_out_3.json          KL_sel= 0.000036  cover=  0.59%
+
+Best coverage per k:
+  k= 1  cover= 25.18%  KL_sel= 0.001537  file=head_mask_L30_attn_out_19.json
+  k= 2  cover= 34.48%  KL_sel= 0.002105  file=head_mask_L30_attn_out_19-30.json
+  k= 4  cover= 43.65%  KL_sel= 0.002665  file=head_mask_L30_attn_out_19-30-25-14.json
+  k= 8  cover= 77.11%  KL_sel= 0.004707  file=head_mask_L30_attn_out_19-30-25-14-18-27-11-26.json

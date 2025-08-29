@@ -1,0 +1,131 @@
+[FULL] L30/resid_post: raw=0.4838 mapped=0.2446 Δ=0.2392
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 0
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_0.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 1
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_1.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 2
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_2.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 3
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_3.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 4
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_4.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 5
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_5.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 6
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_6.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 7
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_7.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 8
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_8.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 9
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_9.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 10
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_10.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 11
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_11.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 12
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_12.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 13
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_13.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 14
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_14.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 15
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_15.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 16
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_16.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 17
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_17.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 18
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_18.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 19
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_19.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 20
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_20.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 21
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_21.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 22
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_22.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 23
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_23.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 24
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_24.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 25
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_25.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 26
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_26.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 27
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_27.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 28
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_28.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 29
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_29.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 30
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_30.json
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 31
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_31.json
+
+Top-8 single heads by Δ (raw head-mask at attn_out):
+  head= 0  Δ=  0.006  cover=   2.5%
+  head= 1  Δ=  0.006  cover=   2.5%
+  head= 2  Δ=  0.006  cover=   2.5%
+  head= 3  Δ=  0.006  cover=   2.5%
+  head= 4  Δ=  0.006  cover=   2.5%
+  head= 5  Δ=  0.006  cover=   2.5%
+  head= 6  Δ=  0.006  cover=   2.5%
+  head= 7  Δ=  0.006  cover=   2.5%
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 0
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_0.json
+
+[k=1] TOP: Δ=0.006 cover=2.5%  heads=[0]
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 24
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_24.json
+       RAND0: Δ=0.006 cover=2.5%  heads=[24]
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 8
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_8.json
+       RAND1: Δ=0.006 cover=2.5%  heads=[8]
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 3
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_3.json
+       RAND2: Δ=0.006 cover=2.5%  heads=[3]
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 0,1
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_0-1.json
+
+[k=2] TOP: Δ=0.006 cover=2.5%  heads=[0, 1]
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 24,26
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_24-26.json
+       RAND0: Δ=0.006 cover=2.5%  heads=[24, 26]
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 4,8
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_4-8.json
+       RAND1: Δ=0.006 cover=2.5%  heads=[4, 8]
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 3,5
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_3-5.json
+       RAND2: Δ=0.006 cover=2.5%  heads=[3, 5]
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 0,1,2,3
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_0-1-2-3.json
+
+[k=4] TOP: Δ=0.006 cover=2.5%  heads=[0, 1, 2, 3]
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 2,16,24,26
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_2-16-24-26.json
+       RAND0: Δ=0.006 cover=2.5%  heads=[2, 16, 24, 26]
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 4,7,8,16
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_4-7-8-16.json
+       RAND1: Δ=0.006 cover=2.5%  heads=[4, 7, 8, 16]
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 3,5,10,23
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_3-5-10-23.json
+       RAND2: Δ=0.006 cover=2.5%  heads=[3, 5, 10, 23]
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 0,1,2,3,4,5,6,7
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_0-1-2-3-4-5-6-7.json
+
+[k=8] TOP: Δ=0.006 cover=2.5%  heads=[0, 1, 2, 3, 4, 5, 6, 7]
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 1,8,13,15,16,24,28,31
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_1-8-13-15-16-24-28-31.json
+       RAND0: Δ=0.006 cover=2.5%  heads=[1, 8, 13, 15, 16, 24, 28, 31]
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 2,3,8,18,24,25,27,31
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_2-3-8-18-24-25-27-31.json
+       RAND1: Δ=0.006 cover=2.5%  heads=[2, 3, 8, 18, 24, 25, 27, 31]
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq4.head_mask_patch --pair mechdiff/pairs/pair_cognitive.py --layer 30 --hook attn_out --k1_decision --split val --alpha 1.0 --head_mask 2,3,5,11,21,23,26,30
+Saved mechdiff/artifacts/cognitive/rq4/head_mask_L30_attn_out_2-3-5-11-21-23-26-30.json
+       RAND2: Δ=0.006 cover=2.5%  heads=[2, 3, 5, 11, 21, 23, 26, 30]
+>> /root/cultshift-vs-cogshift/venv/bin/python -m mechdiff.experiments.cognitive.rq2.run_rq2_mapped_patch --pair mechdiff/pairs/pair_cognitive.py --layer 10 --hook resid_post --k1_decision --split val --alpha 1.0 --map_file mechdiff/artifacts/cognitive/rq2/maps/rq2_clt_L10_resid_post_procrustes_scaled_20250828_133819.pt --device cuda
+Saved mapped_patch results (split= val ): mechdiff/artifacts/cognitive/rq2/mapped_patch_L10_resid_post_val.json
+
+[CTRL] L10/resid_post FULL: Δ=-0.008  (expect ~0)
