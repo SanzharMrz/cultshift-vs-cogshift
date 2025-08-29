@@ -665,4 +665,4 @@ All consistent with our hypothesis: **cognitive = distributed, higher-rank; cult
 
 - Single-head details (table plot). Full set of single‑head coverages for reference.
 
-![Single-head details (coverage table) (cognitive L30/attn_out)](../mechdiff/artifacts/cognitive/rq4/fig/single_head_details.png)
+![Single-head details (coverage table) (cognitive L30/attn_out)](../mechdiff/artifacts/cognitive/rq4/fig/single_head_by_head.png)
